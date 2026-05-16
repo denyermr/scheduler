@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Schedule Board — Design Spec</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  html, body, #root { height:100%; margin:0; }
+  body {
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background:#f0eee9;
+    -webkit-font-smoothing: antialiased;
+    color: #2a1f15;
+  }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="board.jsx"></script>
+<script type="text/babel" src="tokens.jsx"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="screens.jsx"></script>
+<script type="text/babel" src="workflows.jsx"></script>
+
+<script type="text/babel">
+const { useEffect } = React;
+
+function App() {
+  return (
+    <DesignCanvas>
+      {/* ─────────── COVER ─────────── */}
+      <DCSection id="cover" title="Schedule Board · Design Spec v1"
+        subtitle="A digital recreation of a physical animation-studio schedule board — design system, UI screens, and interaction storyboards in one document, sized for a Claude Code handoff.">
+
+        <DCArtboard id="cover-main" label="0 · Reference + commitments" width={780} height={520}>
+          <div style={{ padding:28, height:'100%', background:'#f6f2ec', display:'grid', gridTemplateColumns:'1fr 1fr', gap:24 }}>
+            <div>
+              <div style={{ fontFamily:"'JetBrains Mono', monospace", fontSize:10, color:'#6b5a48', textTransform:'uppercase', letterSpacing:'0.08em' }}>
+                Reference
+              </div>
+              <div style={{ marginTop:10 }}>
+                <img src="uploads/signal-2026-05-16-131630_002.jpeg" alt="Schedule board photo" style={{ width:'100%', borderRadius:6, boxShadow:'0 4px 14px rgba(0,0,0,.18)' }} />
+              </div>
+              <div style={{ fontFamily:"'Manrope', sans-serif", fontSize:11, color:'#6b5a48', marginTop:8, lineHeight:1.5 }}>
+                Acrylic-fronted wood frame · weeks numbered down the left rail · Mon–Fri columns ·
+                hand-written sticky notes in 7–8 colors · pin heads · string between related cards.
+              </div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              <div>
+                <div style={{ fontFamily:"'JetBrains Mono', monospace", fontSize:10, color:'#6b5a48', textTransform:'uppercase', letterSpacing:'0.08em' }}>
+                  Commitments
+                </div>
+                <div style={{ fontFamily:"'Manrope', sans-serif", fontSize:14, color:'#2a1f15', lineHeight:1.55, marginTop:10 }}>
+                  <p style={{ margin:'0 0 10px' }}><b>Tactile, not slick.</b> Cork surface, wood frame, ±2° card rotation, soft drop-shadows, pin heads, string-with-sag threads.</p>
+                  <p style={{ margin:'0 0 10px' }}><b>Two type voices.</b> Caveat &amp; Permanent Marker for anything on the board; Manrope &amp; JetBrains Mono for chrome and this spec.</p>
+                  <p style={{ margin:'0 0 10px' }}><b>One toolbar, three popovers.</b> Weeks · Undo/Redo · Share. Edit popover, color popover, share dialog. Nothing else.</p>
+                  <p style={{ margin:0 }}><b>URL = identity.</b> Anyone with the link can edit. No accounts, no save button, no permissions.</p>
+                </div>
+              </div>
+              <div style={{
+                marginTop:'auto', padding:12, background:'#fff', borderRadius:6,
+                fontFamily:"'JetBrains Mono', monospace", fontSize:10, color:'#6b5a48', lineHeight:1.6,
+              }}>
+                <div style={{ color:'#2a1f15', fontWeight:600 }}>Reading order</div>
+                <div>1 · Tokens — color, type, surfaces</div>
+                <div>2 · Components — card, thread, toolbar, popovers</div>
+                <div>3 · Screens — hero, empty, editing, threads, multi-card</div>
+                <div>4 · Workflows — add, move, thread, edit, share, resize</div>
+              </div>
+            </div>
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      {/* ─────────── TOKENS ─────────── */}
+      <DCSection id="tokens" title="1 · Tokens" subtitle="Color palette, type voices, board surface, pin heads.">
+        <DCArtboard id="tk-color"   label="Color palette"        width={780} height={560}><ColorPalette /></DCArtboard>
+        <DCArtboard id="tk-type"    label="Typography"           width={620} height={620}><Typography /></DCArtboard>
+        <DCArtboard id="tk-grid"    label="Board surface &amp; grid" width={780} height={460}><GridSpec /></DCArtboard>
+      </DCSection>
+
+      {/* ─────────── COMPONENTS ─────────── */}
+      <DCSection id="components" title="2 · Components" subtitle="Card anatomy &amp; states · thread · the whole chrome surface.">
+        <DCArtboard id="cm-card"   label="Card anatomy &amp; states" width={780} height={520}><CardAnatomy /></DCArtboard>
+        <DCArtboard id="cm-thread" label="Thread"                width={780} height={560}><ThreadAnatomy /></DCArtboard>
+        <DCArtboard id="cm-chrome" label="Toolbar &amp; popovers"  width={780} height={680}><ComponentsArtboard /></DCArtboard>
+      </DCSection>
+
+      {/* ─────────── SCREENS ─────────── */}
+      <DCSection id="screens" title="3 · Screens" subtitle="Full-bleed mockups. The first is the hero shot.">
+        <DCArtboard id="sc-hero"     label="Hero · populated 26-week board" width={1280} height={1300}><HeroBoardScreen /></DCArtboard>
+        <DCArtboard id="sc-empty"    label="Empty board"                    width={1280} height={1300}><EmptyBoardScreen /></DCArtboard>
+        <DCArtboard id="sc-editing"  label="Editing a card"                 width={1280} height={820}><EditingScreen /></DCArtboard>
+        <DCArtboard id="sc-thread"   label="Drawing a thread"               width={1280} height={520}><ThreadDrawScreen /></DCArtboard>
+        <DCArtboard id="sc-multi"    label="Multiple cards in one cell"     width={780} height={520}><MultiCardCellScreen /></DCArtboard>
+      </DCSection>
+
+      {/* ─────────── WORKFLOWS ─────────── */}
+      <DCSection id="workflows" title="4 · Workflows" subtitle="Numbered storyboards. Each panel is a discrete state — read left to right.">
+        <DCArtboard id="wf-add"    label="01 · Add a card"           width={1280} height={420}><FlowAddCard /></DCArtboard>
+        <DCArtboard id="wf-move"   label="02 · Move a card"          width={1000} height={420}><FlowMoveCard /></DCArtboard>
+        <DCArtboard id="wf-thread" label="03 · Draw a thread"        width={1280} height={420}><FlowDrawThread /></DCArtboard>
+        <DCArtboard id="wf-edit"   label="04 · Edit / recolor / delete" width={1000} height={460}><FlowEditCard /></DCArtboard>
+        <DCArtboard id="wf-share"  label="05 · Open, share, persist" width={1000} height={400}><FlowShare /></DCArtboard>
+        <DCArtboard id="wf-weeks"  label="06 · Resize the board"     width={1000} height={400}><FlowWeekRange /></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
