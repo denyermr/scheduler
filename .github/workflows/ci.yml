@@ -7,7 +7,7 @@ on:
 
 jobs:
   quality-gate:
-    name: Lint · Typecheck · Test · Build · E2E
+    name: Lint · Typecheck · Test+Coverage · Build · E2E
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -30,8 +30,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
-        run: npm test
+      - name: Unit tests + domain coverage gate
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
 
       - name: Build
         run: npm run build
