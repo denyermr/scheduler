@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+
+# Block console.log / bare `any` in staged TS files (with eslint-disable-next-line + reason escape hatch)
+node ./scripts/check-staged.mjs || exit 1
+
+# ESLint on staged ts/tsx (no-console + no-explicit-any are errors)
+npx lint-staged || exit 1
+
+# Whole-project typecheck (small project; cheap)
+npm run typecheck || exit 1
