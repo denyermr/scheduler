@@ -61,11 +61,11 @@ Local, on commit `60eecfb`:
 - [x] E2E green — `npm run test:e2e` (3 tests across chromium/firefox/webkit, 8.1s, all passed)
 - [x] Production build succeeds — `npm run build` (140.92 KB JS / 0.32 KB CSS / 0.76 KB HTML)
 - [n/a] Coverage threshold met (domain ≥ 90%) — domain is empty; threshold starts Phase 1
-- [ ] CI green on the merge commit — **pending**; not yet pushed to a remote (see Appendix § Open items)
+- [x] CI green on the head commit (`b48fda4`) — run [25971044626](https://github.com/denyermr/scheduler/actions/runs/25971044626), all 14 steps success, 1m 33s total. See Appendix § CI verification.
 
 ## Recommendation
 
-Proceed to Phase 1 *once* the open item below is resolved.
+Proceed to Phase 1.
 
 ## Appendix
 
@@ -148,10 +148,24 @@ That test commit (`21f103f`) was then reverted via `git reset --hard HEAD~1`, le
 - **Playwright runs against `preview` (the built bundle), per BUILD_PLAN.md Phase 0 scope.**
 - **CI uses Node 20 LTS.** §2 does not specify a Node version; chose the current LTS.
 
-### Open items
+### CI verification
 
-- **No git remote / no `gh` auth on this machine.** Step 12 ("screenshot of CI run passing on a real PR") and step 13 ("open a PR") are blocked on a remote being available. The workflow file itself has been verified to be valid YAML and the steps mirror the local gate that passed. Next session should:
-  1. Add an `origin` remote pointing at the GitHub repo (or `gh repo create`).
-  2. `git push -u origin phase-0-foundation`.
-  3. `gh pr create --title "Phase 0 — Foundation"` and link this review in the body.
-  4. Append the CI run URL + screenshot to this file under a "CI verification" subsection.
+PR [#1](https://github.com/denyermr/scheduler/pull/1) — head commit `b48fda4`. Workflow run [25971044626](https://github.com/denyermr/scheduler/actions/runs/25971044626) — total wall-clock 1m 33s.
+
+Per-step conclusions (from `gh api repos/denyermr/scheduler/actions/runs/25971044626/jobs`):
+
+| Step | Conclusion | Duration |
+| --- | --- | --- |
+| Set up job | success | 1s |
+| Checkout | success | 1s |
+| Set up Node 20 | success | 1s |
+| Install dependencies (`npm ci`) | success | 5s |
+| Lint | success | 2s |
+| Typecheck | success | 2s |
+| Unit tests | success | 1s |
+| Build | success | 3s |
+| Install Playwright browsers | success | 55s |
+| E2E tests | success | 13s |
+| Upload Playwright report | success | 2s |
+
+All five gate stages required by `BUILD_PLAN.md` Phase 0 (lint, typecheck, test, build, test:e2e) returned green in CI on the same commit that passed locally.
