@@ -82,6 +82,8 @@ export default defineConfig([
     files: ['tests/**/*.{ts,tsx}'],
     rules: {
       'react-refresh/only-export-components': 'off',
+      // `!` is an accepted pattern in tests for asserting fixture invariants.
+      '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
 ]);
