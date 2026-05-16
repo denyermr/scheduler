@@ -101,11 +101,11 @@ Local, on the head commit of `phase-1-domain`:
 - [x] E2E green — `npm run test:e2e` (3 tests × 3 browsers, ~2.6s)
 - [x] Production build succeeds — `npm run build` (140.92 KB JS / 0.32 KB CSS, unchanged from Phase 0)
 - [x] Coverage threshold met — `npm run test:coverage` (90/90/90/90 against actual 97.29/96.10/100/97.02)
-- [ ] CI green on the head commit — pending push (to be updated when CI completes)
+- [x] CI green on the head commit (`58c5944`) — PR [#2](https://github.com/denyermr/scheduler/pull/2), run [25971489610](https://github.com/denyermr/scheduler/actions/runs/25971489610). All 15 steps success in 1m 24s. Per-step: install 5s · lint 2s · typecheck 2s · test+coverage 5s · build 3s · playwright install 49s · e2e 14s.
 
 ## Recommendation
 
-Proceed to Phase 2 once CI is green on this PR.
+Proceed to Phase 2.
 
 ## Appendix
 
