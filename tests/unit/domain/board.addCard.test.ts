@@ -58,12 +58,18 @@ describe('domain/board — addCard (TDD steps 4 + 5)', () => {
     expect(() => addCard(board, { week: 1.5, day: 0 })).toThrowError(/week/);
   });
 
-  it('rejects day outside 0..4 (CLAUDE.md invariant 7 — Mon–Fri only)', () => {
+  it('rejects day outside 0..6 (CLAUDE.md invariant 7, v2 — Mon–Sun)', () => {
     const board = createBoard(SEED);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally pass an out-of-type day to assert the runtime guard fires
-    expect(() => addCard(board, { week: 0, day: 5 as any })).toThrowError(/day/);
+    expect(() => addCard(board, { week: 0, day: 7 as any })).toThrowError(/day/);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally pass an out-of-type day to assert the runtime guard fires
     expect(() => addCard(board, { week: 0, day: -1 as any })).toThrowError(/day/);
+  });
+
+  it('accepts Sat (5) and Sun (6) (CLAUDE.md invariant 7, v2)', () => {
+    const board = createBoard(SEED);
+    expect(() => addCard(board, { week: 0, day: 5 })).not.toThrow();
+    expect(() => addCard(board, { week: 0, day: 6 })).not.toThrow();
   });
 
   it('defaults text to empty string when omitted', () => {

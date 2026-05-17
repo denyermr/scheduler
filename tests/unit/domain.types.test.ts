@@ -25,7 +25,7 @@ describe('domain/types', () => {
     ]);
   });
 
-  it('Mon–Fri only — exactly 5 day indices, no weekends (CLAUDE.md invariant 7)', () => {
-    expect(DAYS).toEqual([0, 1, 2, 3, 4]);
+  it('Mon–Sun — exactly 7 day indices (CLAUDE.md invariant 7, v2)', () => {
+    expect(DAYS).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 });

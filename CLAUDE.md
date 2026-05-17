@@ -8,9 +8,9 @@ This file is read at the start of every Claude Code session. It is the source of
 
 A digital recreation of a physical schedule board (animation-studio reference). Grid of days × weeks; colored cards pinned to cells; threads connecting related cards. URL is the identity — anyone with the link can edit. No accounts, no save button, no permissions.
 
-**North star: tactile, not slick.** Cork surface, wood frame, ±2° card rotation, drop-shadows, pin heads, string-with-sag threads. Resist any drift toward calendar-app or productivity-SaaS conventions.
+**North star: tactile, not slick.** Cork surface, ±2° card rotation, drop-shadows, pin heads, string-with-sag threads. The board itself floats on a calm off-white page rather than sitting inside a heavy wood frame. Resist any drift toward calendar-app or productivity-SaaS conventions.
 
-The full design spec lives in `design/` (HTML + JSX artboards). Treat it as authoritative for visual decisions.
+The full design spec lives in `design/` (HTML + JSX artboards). Treat it as authoritative for visual decisions. When the markdown in `design/handoff/` and the visual HTML disagree, **the markdown wins for behavior, the visual wins for look** — this convention comes from the handoff package itself.
 
 ---
 
@@ -28,7 +28,7 @@ The full design spec lives in `design/` (HTML + JSX artboards). Treat it as auth
 | Commit hooks | Husky + lint-staged |
 | CI | GitHub Actions (or equivalent) |
 | Persistence (Phases 1–6) | `BoardRepository` interface, localStorage impl |
-| Persistence (Phase 7) | TBD at Phase 7 boundary — candidates: Cloudflare Workers + Durable Objects, Supabase, Node + SQLite + WS |
+| Persistence (Phase 7) | Backend choice still open; sync mechanism locked to **10s poll** (see §9). |
 
 Do **not** introduce additional runtime dependencies without justification in the phase review.
 
@@ -39,6 +39,8 @@ Do **not** introduce additional runtime dependencies without justification in th
 ```
 /
 ├── design/                  # The handed-off design files (read-only reference)
+│   ├── handoff/             # The design-tool's own build spec + visual spec
+│   └── ...                  # JSX artboards + bundled HTML
 ├── src/
 │   ├── domain/              # Pure logic, zero React, zero browser APIs
 │   │   ├── board.ts         # Board state + operations
@@ -50,7 +52,7 @@ Do **not** introduce additional runtime dependencies without justification in th
 │   │   ├── localStorage.ts  # Browser impl (pre-backend)
 │   │   └── remote.ts        # Real backend (Phase 7)
 │   ├── ui/
-│   │   ├── Board.tsx        # Grid, frame, rails, headers, cork
+│   │   ├── Board.tsx        # Grid, rails, headers, cork, floating shadow
 │   │   ├── Card.tsx         # Single card primitive
 │   │   ├── Thread.tsx       # SVG thread path
 │   │   ├── Toolbar.tsx
@@ -67,7 +69,9 @@ Do **not** introduce additional runtime dependencies without justification in th
 └── CLAUDE.md, BUILD_PLAN.md, README.md
 ```
 
-Keep the domain layer **pure**: no React, no DOM, no localStorage, no `Date.now()` directly. Inject a clock if needed. This makes the logic testable in isolation and swappable.
+The design tool's own `handoff/` package suggests a flatter `src/` layout (everything in `src/` root, no `domain/` separation). We do **not** adopt that — our `domain/` split is what gives us 90% pure-logic coverage and a clean swap to a real backend at Phase 7. Keep our layout.
+
+Keep the domain layer **pure**: no React, no DOM, no localStorage, no `Date.now()` directly. Inject a clock if needed.
 
 ---
 
@@ -93,11 +97,26 @@ Default new card color: **peach**.
 `#d6463a` (red), `#e9b834` (yellow), `#3a7ed6` (blue), `#3aa15a` (green), `#f5f1e6` (white). Cosmetic only — no semantics.
 
 ### Surfaces
-- Cork: `linear-gradient(180deg, #c9a978 0%, #b89465 100%)` with noise dots (see `Board.tsx`).
-- Wood frame: `linear-gradient(180deg, #b8845a 0%, #a06c3e 40%, #8a5530 100%)`.
-- Page background: `#3a2410`.
-- Paper / chrome: `#f6f2ec`.
-- Ink dark: `#2a1f15`. Ink mid: `#6b5a48`.
+
+The board floats on the page. There is **no wood frame**.
+
+- **Page background.** Soft cool off-white:
+  ```
+  radial-gradient(ellipse 900px 700px at 12% -6%, rgba(180,200,230,0.35), transparent 60%),
+  radial-gradient(ellipse 1100px 800px at 105% 110%, rgba(200,210,225,0.30), transparent 65%),
+  linear-gradient(180deg, #eef0f4 0%, #e1e4ec 100%)
+  ```
+- **Cork.** Same as before: `linear-gradient(180deg, #c9a978 0%, #b89465 100%)` with noise dots. Border-radius 3px. Inset shadow `inset 0 0 28px rgba(60,30,10,.16)`.
+- **Cork edge hairline.** `inset 0 0 0 1px rgba(40,30,15,.28)` — the boundary that reads cleanly on the new light page.
+- **Board floating shadow.** Replaces the old wood frame:
+  ```
+  0 40px 80px -24px rgba(30,40,60,.28),
+  0 14px 32px -12px rgba(30,40,60,.18),
+  0 2px 6px rgba(30,40,60,.10)
+  ```
+- **Paper / chrome.** `#f6f2ec`.
+- **Ink dark** `#2a1f15`. **Ink mid** `#6b5a48`. **Ink on cork** `#3a2410`.
+- **URL chip text.** `#7a8295` dim, `#2a3142` bright (for the slug portion).
 
 ### Typography
 - **Caveat** 600 16/1.05 — default card text. Mixed case allowed.
@@ -106,23 +125,51 @@ Default new card color: **peach**.
 - **JetBrains Mono** 400 10–11 — annotations, shortcuts, URLs.
 
 ### Grid
-- Columns: Mon–Fri (5).
+- Columns: **Mon–Sun (7)**.
 - Rows: 4–52 weeks, **default 26**.
-- Default cell: 56×38; scales with viewport.
 - Header row 32px; week rail 64px.
 - Grid lines: 0.5px `rgba(40,20,5,.22)`.
 
+### Day-header badges (the only weekend differentiation)
+| | Weekdays (Mon–Fri) | Weekend (Sat, Sun) |
+|---|---|---|
+| Badge fill | `#F4B584` (peach) | `#e9c79a` (lighter peach) |
+| Font size | 18px | 16px |
+| Opacity | 1.0 | 0.78 |
+| Rotation | ±1.5° random | ±1.5° random |
+
+The cells below these headers, their grid lines, and any cards inside them are **identical** to weekdays. No shading, no greying, no "weekend" label.
+
+### Board sizing (fluid)
+The board fills the available horizontal space. Cell metrics are computed, not fixed.
+
+- `cellW = clamp(120px, (containerWidth − railW − horizontalMargin) / 7, 180px)`
+- `cellH = round(cellW × 0.55)` — preserves the sticky-note aspect ratio.
+- Card size scales proportionally: `cardScale = cellW / 56` (56px is the design baseline).
+- The board scrolls vertically inside its container. 26 weeks × `cellH` will exceed a laptop viewport and that is expected.
+- On very narrow viewports (< 720px), the board may overflow horizontally rather than shrink below the 120px floor. Mobile-first layout is deferred to v2.
+
 ### Card chrome
-- Pin head: 5px radial gradient at `left: 3px, top: 50%`.
+- Pin head: 5px radial gradient at `left: 3px, top: 50%` (× `cardScale`).
 - Rotation: `±2°` random on create, persists per-card.
-- Shadow: `0 1.2px 2.5px rgba(0,0,0,.18), 0 4px 8px rgba(0,0,0,.10)`.
-- Border radius: 1.5px (almost square — paper, not plastic).
+- Shadow (idle): `0 1.2px 2.5px rgba(0,0,0,.18), 0 4px 8px rgba(0,0,0,.10)`.
+- Shadow (hover): `0 4px 8px rgba(0,0,0,.22), 0 10px 18px rgba(0,0,0,.14)`.
+- Shadow (drag): `0 8px 18px rgba(0,0,0,.30), 0 2px 4px rgba(0,0,0,.20)`.
+- Border radius: 1.5px.
+- Text wraps to two lines max; ellipsis truncates a third.
 
 ### Thread
 - Stroke: `#9c5a2e`, width 1.8, linecap round, opacity 0.92.
 - Path: `M x1 y1 Q midX (midY + sag) x2 y2` where `sag = clamp(distance*0.06, 8, 22)`.
 - Shadow filter: Gaussian blur σ=1, offset y=1.5, alpha 0.45.
 - No arrowhead. Ever.
+
+### Stacking offsets (multiple cards per cell)
+For N > 1 cards sharing a (week, day) cell, sorted by `createdAt` ascending and indexed `i = 0..N-1`:
+- `offset.x = (-1)^i * (4 + i*3)` px
+- `offset.y = (-1)^i * (3 + i*2.5)` px
+- `z` orders rendering. The most recently *interacted-with* card sits on top (highest `z`).
+- The grid never grows to accommodate more cards.
 
 ---
 
@@ -133,13 +180,13 @@ These are non-negotiable. Tests should pin them.
 1. **URL = identity.** `/b/<slug>`. Unknown slug → create empty board at that slug, no error.
 2. **Anyone with the link can edit.** No auth, no roles, no view-only mode.
 3. **No save button.** Edits debounce 250ms then persist.
-4. **Concurrent edits merge** last-writer-wins, per card and per thread.
+4. **Concurrent edits merge** last-writer-wins, per card and per thread. Sync mechanism is a 10-second poll (§9).
 5. **Marker font auto-applies** via the all-caps regex; users opt out by typing lowercase.
 6. **Pin color and rotation are stable per card** — chosen on create, persisted, never re-randomized.
-7. **One Mon–Fri column set.** No weekends, no time-of-day subdivision.
+7. **One Mon–Sun column set.** Seven days, no time-of-day subdivision. Sat and Sun may be muted **in the day-header badge only** per §4 — smaller text, lighter peach, reduced opacity. Grid lines, cells, and any cards inside them remain identical to weekdays. No 'weekend' label or shading inside cells; no functional differentiation.
 8. **Shrinking the week range never deletes cards.** Off-board cards are preserved and restored on regrow. A confirmation dialog appears if shrink would cut off any cards.
 9. **Deleting a card removes its threads.** No orphaned threads, ever.
-10. **Thread endpoints are stable card IDs**, not array indices. (The design files use indices for brevity; the implementation does not.)
+10. **Thread endpoints are stable card IDs**, not array indices.
 
 ---
 
@@ -157,7 +204,7 @@ Acceptable to defer tests for purely visual exploration — but the moment behav
 - All tests pass: `npm test`, `npm run test:e2e`.
 - Lint clean: `npm run lint`.
 - Types clean: `npm run typecheck`.
-- New behavior has tests at the appropriate level (see §7).
+- New behavior has tests at the appropriate level.
 - Visual changes have a screenshot in the PR description or phase review.
 - No commented-out code, no `console.log`, no `any` without an `// eslint-disable-next-line` and a reason.
 
@@ -176,14 +223,18 @@ One branch per phase: `phase-N-<short-name>`. Merge to `main` only after the pha
 
 ## 7. Anti-patterns — do not
 
-- Add a calendar grid abstraction that supports weekends, hours, or recurring events.
+- Reintroduce the wood frame around the board. The board floats on the light page background via the elevated drop shadow in §4. The frame was deliberately removed in the v2 design drop.
+- Apply any weekend treatment beyond the header-badge muting in §4. Sat and Sun cells, grid lines, and cards behave and look identical to weekdays.
+- Add a calendar grid abstraction supporting hours, recurring events, or holidays.
 - Add roles, sharing settings, comments, mentions, notifications, or @-references.
 - Use icon-library icons in place of the spec's hand-drawn / emoji-free chrome.
 - Animate the card rotation. Cards are placed, not slid into pose.
 - Replace the threads with vector arrows, dashed lines, or anything with an arrowhead.
-- Use Tailwind utility soup for the cork, wood, or card surfaces — those are bespoke and live in `tokens.ts`.
+- Use Tailwind utility soup for the page background, cork, or card surfaces — those are bespoke and live in `tokens.ts`.
 - Introduce a state-management library before Phase 6. The state is small; `useReducer` + context is sufficient.
 - Persist directly from a component. All persistence goes through `BoardRepository`.
+- Hard-code `cellW`/`cellH` in screens. Always derive from container width per §4 "Board sizing (fluid)".
+- Adopt the flatter `src/` layout suggested in `design/handoff/`. Our `domain/persistence/ui/` split is enforced for testability.
 
 ---
 
@@ -200,13 +251,38 @@ For full storyboards, read `design/workflows.jsx`. Summary:
 | 05 | Share / persist | Click Share | Dialog with URL + Copy. Edits persist with 250ms debounce |
 | 06 | Resize board | Click "Weeks N" | Stepper 4–52; warning if shrink cuts cards |
 
+### Keyboard shortcuts (locked)
+| Key | Action |
+|---|---|
+| Enter | Commit card text |
+| Esc | Cancel edit / cancel thread drag / close popover |
+| Cmd/Ctrl-Z | Undo |
+| Cmd/Ctrl-Shift-Z | Redo |
+| Backspace (selected, not editing) | Delete card |
+| Arrow keys (selected, not editing) | Move card 1 cell |
+| Cmd/Ctrl-click on stacked cell | Cycle z-order through the stack |
+
 ---
 
 ## 9. Open decisions
 
-These are intentionally unresolved and will be made at the named phase boundary.
+Remaining open decisions for the named phase boundary.
 
-- **Backend choice** (Phase 7 boundary). Options to evaluate: Cloudflare Workers + Durable Objects (good for per-board state, cheap), Supabase (postgres + realtime), Node + SQLite + WebSockets (full control). Decision documented in `reviews/phase-7.md`.
-- **Realtime mechanism** (Phase 7). Polling vs WebSockets vs SSE. Tied to backend choice.
-- **Slug generation** (Phase 7). Adjective-noun-number (e.g. `oak-thread-942`) per design mocks, but exact word list TBD.
+- **Backend choice** (Phase 7 boundary). Options: Cloudflare Workers + Durable Objects, Supabase, Node + SQLite + minimal HTTP. Decision documented in `reviews/phase-7-backend-decision.md`. **Sync mechanism is locked: 10-second poll on the client for remote changes** — backend choice does not change that.
+- **Slug generation** (Phase 7). Two random words + 3-digit suffix per the design (e.g. `oak-thread-942`). Word lists TBD.
 - **Domain / hosting** (Phase 8 / launch).
+
+---
+
+## 10. Change log
+
+Material spec changes after a phase has shipped. Keep terse.
+
+| Date | Phase touched | Change | Reason |
+|---|---|---|---|
+| 2026-05-16 | 2 | Days: Mon–Fri (5) → Mon–Sun (7). Board width fluid via `clamp(90, vw/7, 160)`. | Match physical reference; original 5-col + fixed width left half the laptop empty. |
+| 2026-05-16 | 2 | Visual refresh: light page bg, wood frame removed, board floats via elevated shadow. Cell clamp bounds raised to `clamp(120, vw/7, 180)`. Sat/Sun header-badge muting permitted (smaller, lighter, opacity 0.78) — invariant 7 rewritten. | New design drop adopted from `design/handoff/`. |
+| 2026-05-16 | 3 | Card type to gain `createdAt`, `updatedAt` (set on create, bumped on every mutation). | LWW merge needs timestamps; cheaper to add now than retrofit at Phase 7. |
+| 2026-05-16 | 4 | Card type to gain `z`, `offset: {x, y}` for in-cell stacking. Deterministic offset formula per §4. Cmd/Ctrl-click cycles stack z-order. | Stacking visual was underspecified; design drop pinned the formula. |
+| 2026-05-16 | 6 | Keyboard shortcuts added: arrow keys nudge selected card by one cell; Backspace deletes selected card (when no input focused). | Locked from design drop §9. |
+| 2026-05-16 | 7 | Sync mechanism locked to 10-second poll (was TBD between polling/WS/SSE). Backend choice remains open. | Design drop concluded a poll suffices for v1's LWW model — simpler and avoids WS infra. |

@@ -3,21 +3,30 @@
 const sF_anno = "'JetBrains Mono', ui-monospace, monospace";
 const sF_body = "'Manrope', -apple-system, system-ui, sans-serif";
 
+// Modern light page background — soft cool off-white with subtle highlights for depth.
+const SCREEN_BG = `
+  radial-gradient(ellipse 900px 700px at 12% -6%, rgba(180,200,230,0.35), transparent 60%),
+  radial-gradient(ellipse 1100px 800px at 105% 110%, rgba(200,210,225,0.30), transparent 65%),
+  linear-gradient(180deg, #eef0f4 0%, #e1e4ec 100%)
+`;
+const SCREEN_URL_DIM = '#7a8295';
+const SCREEN_URL_BRIGHT = '#2a3142';
+
 // ---- Hero screen: full populated 26-week board with toolbar over-laid ----
 function HeroBoardScreen() {
   return (
     <div style={{
-      width:'100%', height:'100%', position:'relative', background:'#3a2410',
+      width:'100%', height:'100%', position:'relative', background:SCREEN_BG,
       padding:'24px 28px 28px',
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-        <div style={{ fontFamily:sF_body, fontSize:13, color:'#d8c8a8', fontWeight:500, letterSpacing:'0.01em' }}>
-          <span style={{ opacity:.7 }}>scheduleboard.app / </span><span style={{ fontFamily:sF_anno }}>oak-thread-942</span>
+        <div style={{ fontFamily:sF_body, fontSize:13, color:SCREEN_URL_DIM, fontWeight:500, letterSpacing:'0.01em' }}>
+          <span style={{ opacity:.7 }}>scheduleboard.app / </span><span style={{ fontFamily:sF_anno, color:SCREEN_URL_BRIGHT }}>oak-thread-942</span>
         </div>
         <Toolbar weeks={26} />
       </div>
       <div style={{ display:'flex', justifyContent:'center' }}>
-        <Board weeks={26} cellW={84} cellH={42} railW={80} headerH={36} />
+        <Board weeks={26} cellW={148} cellH={44} railW={88} headerH={36} />
       </div>
     </div>
   );
@@ -27,17 +36,17 @@ function HeroBoardScreen() {
 function EmptyBoardScreen() {
   return (
     <div style={{
-      width:'100%', height:'100%', position:'relative', background:'#3a2410',
+      width:'100%', height:'100%', position:'relative', background:SCREEN_BG,
       padding:'24px 28px 28px',
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-        <div style={{ fontFamily:sF_body, fontSize:13, color:'#d8c8a8', fontWeight:500 }}>
-          <span style={{ opacity:.7 }}>scheduleboard.app / </span><span style={{ fontFamily:sF_anno }}>fresh-pine-118</span>
+        <div style={{ fontFamily:sF_body, fontSize:13, color:SCREEN_URL_DIM, fontWeight:500 }}>
+          <span style={{ opacity:.7 }}>scheduleboard.app / </span><span style={{ fontFamily:sF_anno, color:SCREEN_URL_BRIGHT }}>fresh-pine-118</span>
         </div>
         <Toolbar weeks={26} />
       </div>
       <div style={{ display:'flex', justifyContent:'center', position:'relative' }}>
-        <Board weeks={26} cellW={84} cellH={42} railW={80} headerH={36} cards={[]} threads={[]} />
+        <Board weeks={26} cellW={148} cellH={44} railW={88} headerH={36} cards={[]} threads={[]} />
         {/* hint over the empty board */}
         <div style={{
           position:'absolute', left:'50%', top:'52%', transform:'translate(-50%, -50%)',
@@ -59,20 +68,20 @@ function EmptyBoardScreen() {
 function EditingScreen() {
   return (
     <div style={{
-      width:'100%', height:'100%', position:'relative', background:'#3a2410',
+      width:'100%', height:'100%', position:'relative', background:SCREEN_BG,
       padding:'24px 28px 28px',
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-        <div style={{ fontFamily:sF_body, fontSize:13, color:'#d8c8a8', fontWeight:500 }}>
-          <span style={{ opacity:.7 }}>scheduleboard.app / </span><span style={{ fontFamily:sF_anno }}>oak-thread-942</span>
+        <div style={{ fontFamily:sF_body, fontSize:13, color:SCREEN_URL_DIM, fontWeight:500 }}>
+          <span style={{ opacity:.7 }}>scheduleboard.app / </span><span style={{ fontFamily:sF_anno, color:SCREEN_URL_BRIGHT }}>oak-thread-942</span>
         </div>
         <Toolbar weeks={26} />
       </div>
       <div style={{ display:'flex', justifyContent:'center', position:'relative' }}>
-        <Board weeks={14} cellW={84} cellH={48} railW={80} headerH={36}
+        <Board weeks={14} cellW={148} cellH={48} railW={88} headerH={36}
           cards={DEMO_CARDS.filter(c => c.w < 14)} threads={[]} />
         {/* popover anchored near a card */}
-        <div style={{ position:'absolute', left:'52%', top:'50%' }}>
+        <div style={{ position:'absolute', left:'58%', top:'48%' }}>
           <div style={{ marginLeft:30 }}>
             <EditPopover />
           </div>
@@ -102,19 +111,19 @@ function ThreadDrawScreen() {
     { w:4, d:0, c:'peach', t:'BLOCK' },
   ];
   // simulate drag from card 0 (RIG) toward a target near card 5 (LIGHT)
-  const cellW = 110, cellH = 60, railW = 80, headerH = 36;
+  const cellW = 152, cellH = 64, railW = 88, headerH = 36;
   const fromX = railW + 0*cellW + cellW/2;
   const fromY = headerH + 0*cellH + cellH/2;
   const cursorX = railW + 3*cellW + cellW/2 + 6;
   const cursorY = headerH + 1*cellH + cellH/2 - 4;
   return (
     <div style={{
-      width:'100%', height:'100%', position:'relative', background:'#3a2410',
+      width:'100%', height:'100%', position:'relative', background:SCREEN_BG,
       padding:'24px 28px 28px',
     }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-        <div style={{ fontFamily:sF_body, fontSize:13, color:'#d8c8a8', fontWeight:500 }}>
-          <span style={{ opacity:.7 }}>scheduleboard.app / </span><span style={{ fontFamily:sF_anno }}>oak-thread-942</span>
+        <div style={{ fontFamily:sF_body, fontSize:13, color:SCREEN_URL_DIM, fontWeight:500 }}>
+          <span style={{ opacity:.7 }}>scheduleboard.app / </span><span style={{ fontFamily:sF_anno, color:SCREEN_URL_BRIGHT }}>oak-thread-942</span>
         </div>
         <Toolbar weeks={26} />
       </div>
@@ -125,18 +134,12 @@ function ThreadDrawScreen() {
         {/* helper hint */}
         <div style={{
           position:'absolute', left: cursorX + 24, top: cursorY + 90, pointerEvents:'none',
-          fontFamily:sF_anno, fontSize:10, color:'#fff', opacity:.85, letterSpacing:'0.08em', textTransform:'uppercase',
-          background:'rgba(0,0,0,.45)', padding:'4px 8px', borderRadius:3,
+          fontFamily:sF_anno, fontSize:11, color:'#fff', opacity:.85, letterSpacing:'0.08em', textTransform:'uppercase',
+          background:'rgba(0,0,0,.45)', padding:'5px 10px', borderRadius:3,
         }}>
           drop on a card to connect · esc to cancel
         </div>
-        {/* fake cursor */}
-        <div style={{
-          position:'absolute',
-          left: 28 + cursorX + 192,
-          top: 14 + cursorY + 90,
-          pointerEvents:'none',
-        }}>
+        <div style={{ position:'absolute', left: cursorX + 220, top: cursorY + 80, pointerEvents:'none' }}>
           <svg width="20" height="22" style={{ filter:'drop-shadow(0 1px 2px rgba(0,0,0,.5))' }}>
             <path d="M 1 1 L 1 17 L 6 13 L 9 19 L 12 18 L 9 12 L 16 12 Z" fill="#fff" stroke="#000" strokeWidth="1" />
           </svg>
@@ -172,7 +175,7 @@ function MultiCardCellScreen() {
         grows. Top-most card is the most recently moved/edited.
       </Hint>
       <div style={{ marginTop:18, display:'flex', justifyContent:'center' }}>
-        <Board weeks={4} cellW={130} cellH={86} railW={80} headerH={36}
+        <Board weeks={4} cellW={148} cellH={86} railW={80} headerH={36}
           cards={cards} threads={[]} />
       </div>
     </div>

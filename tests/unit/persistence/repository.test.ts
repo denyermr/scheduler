@@ -32,7 +32,7 @@ describe('LocalStorageRepository (Phase 2 stub)', () => {
     expect(a).not.toBeNull();
     expect(b).not.toBeNull();
     expect(a!.weeks).toBe(26);
-    expect(a!.cards.length).toBe(47);
+    expect(a!.cards.length).toBe(54);
     expect(a!.threads.length).toBe(4);
   });
 

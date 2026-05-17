@@ -77,6 +77,14 @@ const DEMO_CARDS = [
   { w: 24, d: 1, c: 'peach',  t: 'BLOCK' },
   { w: 25, d: 1, c: 'coral',  t: 'BLOCK' },
   { w: 25, d: 2, c: 'peach',  t: 'Dress + light' },
+  // weekend tags — sat/sun (d:5,6) — fewer, lighter
+  { w: 2, d: 5, c: 'mint',  t: 'OFF' },
+  { w: 5, d: 6, c: 'mint',  t: 'OFF' },
+  { w: 8, d: 5, c: 'coral', t: 'OT crew' },
+  { w: 13, d: 5, c: 'mint', t: 'Holiday' },
+  { w: 13, d: 6, c: 'mint', t: 'Holiday' },
+  { w: 17, d: 6, c: 'yellow', t: 'Render Q' },
+  { w: 22, d: 5, c: 'mint',   t: 'OFF' },
 ];
 
 // A few demo threads (indices into DEMO_CARDS above).
@@ -100,7 +108,7 @@ const WEEK_LABELS = (() => {
   return out;
 })();
 
-const DAYS = ['MON', 'TUES', 'WED', 'THURS', 'FRI'];
+const DAYS = ['MON', 'TUES', 'WED', 'THURS', 'FRI', 'SAT', 'SUN'];
 
 // ---- Card primitive ----
 function Card({ color = 'peach', text = 'BLOCK', rot = 0, pin = 'red', size = 1, marker = false, style }) {
@@ -163,21 +171,22 @@ function Board({
   threadDrag = null,      // { fromIdx, x, y } in board-local px
   style,
 }) {
-  const W = railW + 5 * cellW;
+  const W = railW + 7 * cellW;
   const H = headerH + weeks * cellH;
   const rand = seeded(1234);
 
   return (
     <div style={{
       position: 'relative',
-      width: W + (frame ? 26 : 0),
-      height: H + (frame ? 32 : 0),
-      padding: frame ? '8px 14px 24px 12px' : 0,
-      background: frame
-        ? 'linear-gradient(180deg, #b8845a 0%, #a06c3e 40%, #8a5530 100%)'
-        : 'transparent',
-      borderRadius: frame ? 6 : 0,
-      boxShadow: frame ? '0 4px 14px rgba(0,0,0,.18), inset 0 0 0 1px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.18)' : 'none',
+      width: W,
+      height: H,
+      padding: 0,
+      background: 'transparent',
+      borderRadius: frame ? 4 : 0,
+      // Float the cork on the page — no frame, just a generous soft elevated shadow.
+      boxShadow: frame
+        ? '0 40px 80px -24px rgba(30,40,60,.28), 0 14px 32px -12px rgba(30,40,60,.18), 0 2px 6px rgba(30,40,60,.10)'
+        : 'none',
       ...style,
     }}>
       {/* inner board surface (cork) */}
@@ -190,7 +199,8 @@ function Board({
           radial-gradient(circle at 88% 12%, rgba(255,255,255,.05) 0 1.2px, transparent 2px),
           linear-gradient(180deg, #c9a978 0%, #b89465 100%)`,
         backgroundSize: '13px 13px, 9px 9px, 17px 17px, 11px 11px, 100% 100%',
-        boxShadow: 'inset 0 0 24px rgba(60,30,10,.18), inset 0 0 0 1px rgba(0,0,0,.18)',
+        boxShadow: 'inset 0 0 28px rgba(60,30,10,.16), inset 0 0 0 1px rgba(40,30,15,.28)',
+        borderRadius: 3,
         overflow: 'hidden',
       }}>
         {/* grid lines */}
@@ -201,7 +211,7 @@ function Board({
               stroke="rgba(40,20,5,.22)" strokeWidth="0.5" />
           ))}
           {/* vertical */}
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 8 }).map((_, i) => (
             <line key={'v'+i} x1={railW + i*cellW} y1={0} x2={railW + i*cellW} y2={H}
               stroke="rgba(40,20,5,.22)" strokeWidth="0.5" />
           ))}
@@ -213,19 +223,23 @@ function Board({
         </svg>
 
         {/* day headers */}
-        {DAYS.map((d, i) => (
-          <div key={d} style={{
-            position:'absolute', top: 6, left: railW + i*cellW, width: cellW, height: headerH-6,
-            display:'flex', alignItems:'center', justifyContent:'center',
-            fontFamily: "'Caveat', cursive", fontWeight:700, fontSize: 18, color:'#3a2410',
-            transform: `rotate(${(rand()-.5)*1.5}deg)`,
-          }}>
-            <span style={{
-              background:'#F4B584', padding:'2px 8px', borderRadius:1.5,
-              boxShadow:'0 1px 2px rgba(0,0,0,.18)',
-            }}>{d}</span>
-          </div>
-        ))}
+        {DAYS.map((d, i) => {
+          const weekend = i >= 5;
+          return (
+            <div key={d} style={{
+              position:'absolute', top: 6, left: railW + i*cellW, width: cellW, height: headerH-6,
+              display:'flex', alignItems:'center', justifyContent:'center',
+              fontFamily: "'Caveat', cursive", fontWeight:700, fontSize: weekend ? 16 : 18, color:'#3a2410',
+              transform: `rotate(${(rand()-.5)*1.5}deg)`,
+              opacity: weekend ? 0.78 : 1,
+            }}>
+              <span style={{
+                background: weekend ? '#e9c79a' : '#F4B584', padding:'2px 8px', borderRadius:1.5,
+                boxShadow:'0 1px 2px rgba(0,0,0,.18)',
+              }}>{d}</span>
+            </div>
+          );
+        })}
 
         {/* week rail (numbers + dates) */}
         {Array.from({ length: weeks }).map((_, i) => {

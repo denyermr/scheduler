@@ -26,6 +26,26 @@
 <body>
 <div id="root"></div>
 
+<template id="__bundler_thumbnail">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <rect width="100" height="100" fill="#c9a978"/>
+    <rect x="22" y="22" width="56" height="56" fill="none" stroke="#3a2410" stroke-width="1.2" opacity="0.5"/>
+    <g>
+      <line x1="22" y1="36" x2="78" y2="36" stroke="#3a2410" stroke-width="0.4" opacity="0.4"/>
+      <line x1="22" y1="50" x2="78" y2="50" stroke="#3a2410" stroke-width="0.4" opacity="0.4"/>
+      <line x1="22" y1="64" x2="78" y2="64" stroke="#3a2410" stroke-width="0.4" opacity="0.4"/>
+      <line x1="36" y1="22" x2="36" y2="78" stroke="#3a2410" stroke-width="0.4" opacity="0.4"/>
+      <line x1="50" y1="22" x2="50" y2="78" stroke="#3a2410" stroke-width="0.4" opacity="0.4"/>
+      <line x1="64" y1="22" x2="64" y2="78" stroke="#3a2410" stroke-width="0.4" opacity="0.4"/>
+    </g>
+    <rect x="26" y="38" width="14" height="6" fill="#F26B86" transform="rotate(-3 33 41)"/>
+    <rect x="52" y="40" width="14" height="6" fill="#F4B584" transform="rotate(2 59 43)"/>
+    <rect x="38" y="54" width="14" height="6" fill="#6FA8D8" transform="rotate(-1 45 57)"/>
+    <rect x="60" y="66" width="14" height="6" fill="#EE7A3E" transform="rotate(3 67 69)"/>
+    <path d="M 33 41 Q 50 54 67 69" stroke="#9c5a2e" stroke-width="0.6" fill="none" opacity="0.7"/>
+  </svg>
+</template>
+
 <script type="text/babel" src="design-canvas.jsx"></script>
 <script type="text/babel" src="board.jsx"></script>
 <script type="text/babel" src="tokens.jsx"></script>
@@ -104,7 +124,7 @@ function App() {
         <DCArtboard id="sc-empty"    label="Empty board"                    width={1280} height={1300}><EmptyBoardScreen /></DCArtboard>
         <DCArtboard id="sc-editing"  label="Editing a card"                 width={1280} height={820}><EditingScreen /></DCArtboard>
         <DCArtboard id="sc-thread"   label="Drawing a thread"               width={1280} height={520}><ThreadDrawScreen /></DCArtboard>
-        <DCArtboard id="sc-multi"    label="Multiple cards in one cell"     width={780} height={520}><MultiCardCellScreen /></DCArtboard>
+        <DCArtboard id="sc-multi"    label="Multiple cards in one cell"     width={1280} height={520}><MultiCardCellScreen /></DCArtboard>
       </DCSection>
 
       {/* ─────────── WORKFLOWS ─────────── */}

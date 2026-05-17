@@ -51,6 +51,14 @@ const DEMO_CARDS: readonly DemoCard[] = [
   { w: 24, d: 1, c: 'peach', t: 'BLOCK' },
   { w: 25, d: 1, c: 'coral', t: 'BLOCK' },
   { w: 25, d: 2, c: 'peach', t: 'Dress + light' },
+  // Weekend tags (Sat=5, Sun=6) — fewer, lighter. Added in spec v2.
+  { w: 2, d: 5, c: 'mint', t: 'OFF' },
+  { w: 5, d: 6, c: 'mint', t: 'OFF' },
+  { w: 8, d: 5, c: 'coral', t: 'OT crew' },
+  { w: 13, d: 5, c: 'mint', t: 'Holiday' },
+  { w: 13, d: 6, c: 'mint', t: 'Holiday' },
+  { w: 17, d: 6, c: 'yellow', t: 'Render Q' },
+  { w: 22, d: 5, c: 'mint', t: 'OFF' },
 ];
 
 const DEMO_THREADS: readonly [number, number][] = [

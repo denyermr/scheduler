@@ -68,8 +68,23 @@ describe('domain/board — moveCard (TDD step 7, CLAUDE.md invariant 6)', () => 
       day: 0,
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally pass an out-of-type day to assert the runtime guard fires
-    expect(() => moveCard(b1, cardId, { week: 0, day: 5 as any })).toThrowError(
+    expect(() => moveCard(b1, cardId, { week: 0, day: 7 as any })).toThrowError(
       /day/,
     );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally pass an out-of-type day to assert the runtime guard fires
+    expect(() => moveCard(b1, cardId, { week: 0, day: -1 as any })).toThrowError(
+      /day/,
+    );
+  });
+
+  it('accepts Sat (5) and Sun (6)', () => {
+    const { board: b1, cardId } = addCard(createBoard(SEED), {
+      week: 0,
+      day: 0,
+    });
+    const b5 = moveCard(b1, cardId, { week: 0, day: 5 });
+    expect(b5.cards[0]?.day).toBe(5);
+    const b6 = moveCard(b5, cardId, { week: 0, day: 6 });
+    expect(b6.cards[0]?.day).toBe(6);
   });
 });

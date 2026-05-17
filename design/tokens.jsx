@@ -297,7 +297,7 @@ function GridSpec() {
           <SpecRow k="Day cell" v="56 × 38 (default) · scales with viewport" />
           <SpecRow k="Header row" v="32px · day badge in peach" />
           <SpecRow k="Week rail" v="64px · # + Mon date in Caveat" />
-          <SpecRow k="Columns" v="Mon–Fri only (5)" />
+          <SpecRow k="Columns" v="Mon–Sun (7) · Sat/Sun visually muted" />
           <SpecRow k="Rows" v="4–52 weeks · default 26" />
         </div>
       </div>
