@@ -31,7 +31,7 @@ npm run test:e2e       # playwright, must be 100% green
 npm run build          # production build must succeed
 ```
 
-Coverage threshold for `src/domain/` is **90% lines / 90% branches** from Phase 1 onward, enforced in CI. UI is not coverage-gated — behavior is gated by tests at the right level instead.
+Coverage threshold for `src/domain/` is **90% lines / 90% branches** from Phase 1 onward, enforced in CI.
 
 ---
 
@@ -42,101 +42,68 @@ Coverage threshold for `src/domain/` is **90% lines / 90% branches** from Phase 
 **Scope**
 - Vite + React 18 + TypeScript (strict) scaffold.
 - Vitest + RTL configured. Playwright configured against `npm run preview`.
-- ESLint (typescript-eslint strict + react-hooks) + Prettier wired up; conflicting rules resolved.
+- ESLint (typescript-eslint strict + react-hooks) + Prettier; conflicts resolved.
 - Husky + lint-staged: pre-commit runs lint + typecheck on staged files.
-- GitHub Actions workflow: lint, typecheck, unit, e2e, build, on PR + main.
-- `src/domain/types.ts` skeleton with empty `Board`, `Card`, `Thread`, `Color` types — just the shapes, no logic.
-- Smoke `App.tsx` rendering a "Hello board" page with a Manrope-loaded body.
-- Google Fonts (Caveat, Permanent Marker, Manrope, JetBrains Mono) loaded in `index.html`.
-- Commit hooks reject `console.log` and `any` (with override comment allowed).
-- `design/` directory populated from the handed-off zip.
+- GitHub Actions: lint, typecheck, unit, e2e, build, on PR + main.
+- `src/domain/types.ts` skeleton with empty `Board`, `Card`, `Thread`, `Color` types.
+- Smoke `App.tsx` rendering "Hello board".
+- Google Fonts (Caveat, Permanent Marker, Manrope, JetBrains Mono) in `index.html`.
+- Commit hooks reject `console.log` and `any` (override comment allowed).
+- `design/` directory populated from the handed-off package.
 - `reviews/` directory created.
 
 **Out of scope.** Any board rendering, any state, any interaction.
 
-**Session kickoff prompt**
-```
-Bootstrap the Schedule Board project per BUILD_PLAN.md Phase 0. Read CLAUDE.md
-first. The design files live in design/. Set up the full toolchain (Vite, TS
-strict, Vitest, RTL, Playwright, ESLint, Prettier, Husky, lint-staged, GH
-Actions). Verify every step of the quality gate runs locally and in CI before
-writing the review. Do not implement any board logic.
-```
-
 **TDD plan**
-- One smoke unit test that imports `src/domain/types.ts` and confirms it compiles (sanity).
-- One Playwright test that visits `/` and asserts "Hello board" is in the DOM.
-- That is enough for Phase 0 — the value is in the toolchain working end to end.
+- One smoke unit test that imports `src/domain/types.ts`.
+- One Playwright test asserting "Hello board" renders.
 
-**Test inventory**
-| Level | Count | What |
-|---|---|---|
-| Unit | 1 | Types module imports |
-| E2E | 1 | Home page renders |
-
-**Quality gates (must pass)**
-- All five commands in the gate above run green locally **and** in CI.
-- A deliberately-broken commit (e.g. `any` without override, or trailing `console.log`) is rejected by pre-commit or CI.
-
-**Critical review report — `reviews/phase-0.md`**
-Use the template at the bottom. Specifically demonstrate:
-- Screenshot of CI run passing on a real PR.
-- The list of installed dependencies and exact versions.
-- Any deviations from CLAUDE.md (and why).
+**Quality gates**
+- All five commands run green locally **and** in CI.
+- A deliberately-broken commit (e.g. `any` without override, or trailing `console.log`) is rejected.
 
 ---
 
 ## Phase 1 — Core data model
 
-**Goal.** All board logic, pure, no UI, no browser. If a behavior is testable in `src/domain/` it lives there.
+**Goal.** All board logic, pure, no UI, no browser.
 
 **Scope**
-- Types: `Card`, `Thread`, `Board`, `Color`, `Day` (0–4), `Week` (0-indexed), `Pin`, `Rotation`.
-- IDs: `cardId()`, `threadId()` — opaque string IDs (e.g. `card_<8 hex>`), seedable for tests.
-- `Board` operations (all pure, return new Board):
-  - `createBoard({ startMonday, weeks })` — `weeks` defaults to 26.
+- Types: `Card`, `Thread`, `Board`, `Color`, `Day` (0–6, Mon–Sun), `Week` (0-indexed), `Pin`, `Rotation`.
+- IDs: `cardId()`, `threadId()` — opaque string IDs, seedable for tests.
+- Board operations (pure, return new Board):
+  - `createBoard({ startMonday, weeks })` — default 26 weeks.
   - `addCard(board, { week, day, color, text }) → { board, cardId }`
   - `updateCard(board, cardId, { text?, color? })`
   - `moveCard(board, cardId, { week, day })`
-  - `deleteCard(board, cardId)` — also removes attached threads.
+  - `deleteCard(board, cardId)` — removes attached threads.
   - `addThread(board, { fromCardId, toCardId })` — rejects self-threads and duplicates.
   - `deleteThread(board, threadId)`
-  - `resizeWeeks(board, weeks)` — returns `{ board, offBoardCardIds }` for shrink. Does not mutate or delete off-board cards; their `week` stays as-is.
-  - `cardsOnBoard(board) → Card[]` — only cards whose `week < board.weeks`.
-  - `cardsOffBoard(board) → Card[]`.
-- Helpers: `isMarker(text)` returning the auto-marker regex result, `clampWeeks(n)`.
-- Pin color and rotation are assigned inside `addCard` from injected randomness sources (parameters with defaults), to keep determinism in tests.
+  - `resizeWeeks(board, weeks)` — returns `{ board, offBoardCardIds }` for shrink.
+  - `cardsOnBoard(board)`, `cardsOffBoard(board)`.
+- Helpers: `isMarker(text)`, `clampWeeks(n)`.
+- Inject randomness as parameters for determinism.
 
-**Out of scope.** Persistence, undo/redo, any DOM. Even the `BoardRepository` interface — that's Phase 2.
-
-**Session kickoff prompt**
-```
-Implement Phase 1 of BUILD_PLAN.md. The full domain model and operations in
-src/domain/, with 90% line+branch coverage. Pure TypeScript only — zero React,
-zero browser APIs. Inject randomness as parameters so tests are deterministic.
-Reference the invariants in CLAUDE.md §5 — every invariant should be pinned
-by at least one test.
-```
+**Out of scope.** Persistence, undo/redo, any DOM.
 
 **TDD plan**
 
-Order matters. Each step is a red→green→refactor cycle.
-
-1. `cardId()` generates unique opaque IDs of the expected shape.
-2. `createBoard({ weeks: 26 })` returns a board with 0 cards, 0 threads, weeks=26.
-3. `createBoard({ weeks: 3 })` is rejected (min 4); `createBoard({ weeks: 60 })` clamped or rejected (decide; align with §5).
-4. `addCard` adds a card, returns new board + cardId, original board unchanged.
-5. `addCard` assigns rotation in [-2, +2] and a pin color from the fixed palette.
-6. `updateCard` updates text or color; rotation and pin are preserved.
-7. `moveCard` changes week/day; rotation/pin preserved.
-8. `deleteCard` removes the card.
-9. `deleteCard` also removes threads where it is from or to (invariant 9).
-10. `addThread` creates a thread between two existing cards.
-11. `addThread` rejects self-threads, duplicate threads, threads to non-existent cards.
-12. `deleteThread` removes the thread.
-13. `resizeWeeks` to a smaller N keeps off-board cards in the board but flagged via `cardsOffBoard()`.
-14. `resizeWeeks` regrow restores previously off-board cards as on-board (invariant 8).
-15. `isMarker('BLOCK')` true; `isMarker('Block')` false; `isMarker('B&L')` true; `isMarker('A')` false.
+1. `cardId()` generates unique opaque IDs.
+2. `createBoard({ weeks: 26 })` is empty with weeks=26.
+3. `createBoard({ weeks: 3 })` rejected; `createBoard({ weeks: 60 })` clamped.
+4. `addCard` rejects `day < 0` or `day > 6`.
+5. `addCard` adds a card; original unchanged.
+6. `addCard` assigns rotation in [-2, +2] and a pin color from the fixed palette.
+7. `updateCard` updates text or color; rotation and pin preserved.
+8. `moveCard` changes week/day; rotation/pin preserved.
+9. `deleteCard` removes the card.
+10. `deleteCard` removes threads where it is from or to.
+11. `addThread` creates a thread between two existing cards.
+12. `addThread` rejects self-threads, duplicates, non-existent endpoints.
+13. `deleteThread` removes the thread.
+14. `resizeWeeks` smaller keeps off-board cards flagged via `cardsOffBoard()`.
+15. `resizeWeeks` regrow restores off-board cards as on-board.
+16. `isMarker('BLOCK')` true; `isMarker('Block')` false; `isMarker('B&L')` true; `isMarker('A')` false.
 
 **Test inventory**
 | Level | Count | What |
@@ -145,166 +112,242 @@ Order matters. Each step is a red→green→refactor cycle.
 
 **Quality gates**
 - `src/domain/` coverage ≥ 90% lines + branches.
-- No React or browser imports anywhere under `src/domain/` (enforced by ESLint rule `no-restricted-imports`).
-- A property-based test on `moveCard`: any sequence of moves on a card preserves its id, rotation, pin.
-
-**Critical review report — `reviews/phase-1.md`**
-In addition to the template:
-- Coverage report screenshot.
-- Confirmation each of the 10 invariants in CLAUDE.md §5 is pinned by a named test.
-- Any operations whose semantics required clarification — with the resolution.
+- No React or browser imports under `src/domain/` (ESLint rule).
+- A property-based test on `moveCard`: any sequence preserves id, rotation, pin.
 
 ---
 
 ## Phase 2 — Read-only board rendering
 
-**Goal.** Given a `Board` (from Phase 1), render it exactly per the design — cork, wood frame, headers, week rail, cards (with marker auto-detect, rotation, pin), threads. No interactions. Visual fidelity is the deliverable.
+**Goal.** Given a `Board`, render it per the design. No interactions. Visual fidelity is the deliverable.
 
 **Scope**
-- `tokens.ts` exporting the canonical color / surface / font / metric values from CLAUDE.md §4.
-- `<Board />` component, props: `board: Board`, `cellW?`, `cellH?`, `railW?`, `headerH?`, `frame?`.
-- `<Card />` component, props: derived from a `Card`.
-- `<Thread />` component, renders the SVG path between two card positions.
-- A `BoardRepository` interface (read methods only this phase: `load(slug): Promise<Board | null>`).
-- Two implementations: `InMemoryRepository` (tests) and a stub `LocalStorageRepository` returning a hard-coded demo board.
+- `tokens.ts` exporting canonical values from CLAUDE.md §4.
+- `<Board />`, props: `board: Board`, optional `containerWidth`.
+- `<Card />`, props derived from a `Card` plus a `scale` prop.
+- `<Thread />`, SVG path between two card positions.
+- `BoardRepository` interface (read-only this phase): `load(slug)`.
+- `InMemoryRepository` + stub `LocalStorageRepository`.
 - App boots, loads demo board, renders.
 
-**Out of scope.** Hover states, click handlers, drag, popovers, toolbar.
+7 day columns (Mon–Sun); fluid cell width per CLAUDE.md §4.
 
-**Session kickoff prompt**
-```
-Implement Phase 2 of BUILD_PLAN.md. Render a Board to the DOM with full visual
-fidelity to design/screens.jsx (HeroBoardScreen). Reference design/board.jsx
-for exact metrics — they're authoritative. No interactions. Capture before/
-after screenshots in reviews/phase-2.md against the hero artboard.
-```
+**Out of scope.** Hover, click, drag, popovers, toolbar.
 
 **TDD plan**
-- RTL: `<Card>` renders text, applies marker font when text matches all-caps regex, applies rotation as a transform style, has a pin head with the chosen color.
-- RTL: `<Board>` renders 5 day headers, N week rows, and one card per `board.cards` entry positioned at the right cell.
-- RTL: `<Board>` renders one thread per `board.threads` entry as an `<svg>` `<path>` with the correct stroke and the correct sag for the distance.
-- Visual regression (Playwright `expect(page).toHaveScreenshot()`): hero board matches design within tolerance.
+- `<Card>` renders text, applies marker font when all-caps, applies rotation, renders pin head.
+- `<Board>` renders 7 day headers and N week rows.
+- At 1440px container, computed `cellW` is inside the clamp bounds; at 600px, floors at the minimum.
+- `<Board>` renders one thread per `board.threads` with correct sag.
+- Visual regression: hero board matches design at 1440×900.
 
 **Test inventory**
 | Level | Count | What |
 |---|---|---|
-| Unit (RTL) | ~12 | Card, Board, Thread rendering |
+| Unit (RTL) | ~14 | Card, Board, Thread rendering + fluid sizing |
 | E2E + visual | 1 | Hero board screenshot |
 
 **Quality gates**
 - Visual regression baseline committed and matched.
-- Lighthouse performance ≥ 90 on a populated 26-week board (run via Playwright).
-- The 8-color palette is the *only* set of fills used on cards (assert by enumerating CSS).
+- Lighthouse performance ≥ 90 on populated 26-week board.
+- 8-color palette is the only fill set on cards.
+- At 1440px viewport, rendered board width ≥ 90% of content area.
 
-**Critical review report — `reviews/phase-2.md`**
-- Side-by-side: design artboard (hero) and current build, exported.
-- Pixel-diff summary if any.
-- Performance numbers.
-- Anything visually compromised and why (with a deferred-work ticket).
+---
+
+## Phase 2 — Amendment A · 7-day grid + fluid width (2026-05-16)
+
+Brought the existing build to **Mon–Sun (7)** with fluid cell width via `clamp(90, vw/7, 160)`.
+
+If you have already merged Amendment A, proceed to Amendment B. If Amendment A is still in flight, you may either land it first or fold both amendments into a single PR — Amendment B's changes do not conflict.
+
+(Full TDD plan and kickoff prompt for this amendment in the previous revision of this document — preserved in git history. Summary: widen `Day` type to `0..6`, extend `DAYS` constant, replace `* 5` with `* 7` in grid math, replace fixed `cellW` with the clamp formula, regenerate visual baseline.)
+
+---
+
+## Phase 2 — Amendment B · Visual refresh (2026-05-16)
+
+Brings the existing build in line with the new design drop in `design/handoff/`: **light page background, no wood frame, floating board with elevated shadow, weekend header muting, raised cell clamp bounds**.
+
+### Scope of patch
+
+1. **Page background.** `App.tsx` (and any screen wrapper) replaces the dark brown `#3a2410` background with the cool off-white per CLAUDE.md §4. URL chip text colors updated (`#7a8295` dim, `#2a3142` bright).
+2. **Remove the wood frame.** In `<Board>`, delete the wood-gradient wrapper, its padding, its inset bevel highlights. Replace with the floating shadow per §4. Cork keeps its own border-radius (3) and inset hairline edge.
+3. **Cell clamp bounds raised.** `clamp(90, …, 160)` → `clamp(120, (containerWidth − railW − margin) / 7, 180)`. Update the two sizing tests that pinned the old bounds.
+4. **Weekend header muting.** Day headers for Sat (index 5) and Sun (index 6) render with:
+   - Badge fill `#e9c79a` (was `#F4B584` for weekdays).
+   - Font size 16px (was 18px).
+   - Opacity 0.78.
+   - Same ±1.5° random rotation as weekdays.
+   - Same width slot, same alignment, no other changes.
+5. **Cork inner shadow softened.** `inset 0 0 24px rgba(60,30,10,.18)` → `inset 0 0 28px rgba(60,30,10,.16)`. Hairline `inset 0 0 0 1px rgba(0,0,0,.18)` → `inset 0 0 0 1px rgba(40,30,15,.28)`.
+6. **Visual regression baseline regenerated.** Previous post-Amendment-A baseline archived under `tests/e2e/__screenshots__/_archive/phase-2-amend-A/`.
+
+### Behavior NOT changed
+
+- 7-day grid (already Mon–Sun from Amendment A).
+- Card data shape (unchanged this amendment — see Phase 3 / 4 for that).
+- Workflows 01–06 (no interaction work in this patch).
+- The 8-color palette.
+
+### TDD plan (ordered red → green)
+
+1. *Red:* update existing "page background is `#3a2410`" assertion to expect the new off-white gradient. Watch it fail.
+2. *Green:* implement the new page background in the app shell. Test passes.
+3. *Red:* update "Board renders inside a wood-gradient frame" assertion to "Board has no frame element; cork is the outer surface". Watch it fail.
+4. *Green:* delete the frame wrapper. Cork radius and hairline preserved. Test passes.
+5. *Red:* new unit test — at `containerWidth = 1440`, computed `cellW` is in [120, 180].
+6. *Red:* new unit test — at `containerWidth = 600`, computed `cellW` equals 120 (clamp floor).
+7. *Red:* delete or update tests pinning the old 90–160 bounds; replace with 120–180.
+8. *Green:* update the clamp formula in `<Board>`. All three tests pass.
+9. *Red:* new unit test — the Sat day-header badge has fill `#e9c79a`, font-size 16px, opacity 0.78. Same for Sun.
+10. *Red:* new unit test — Mon–Fri day-header badges still have fill `#F4B584`, font-size 18px, opacity 1.
+11. *Red:* new unit test — *cells* in columns 5 and 6 (Sat, Sun) have the same background, grid lines, and dimensions as weekday cells (asserts invariant 7's "cells unchanged" clause).
+12. *Green:* implement weekend-only header styling in `<Board>`. Tests 9, 10, 11 pass.
+13. Regenerate the visual regression baseline. **Manually inspect** the new screenshot at 1440×900 against `design/screens.jsx` hero artboard before committing.
+14. Run the full quality gate.
+
+### Session kickoff prompt for Amendment B
+
+```
+You are applying Amendment B to Phase 2 of the Schedule Board build.
+
+Read the updated CLAUDE.md in full — §1, §4 (Surfaces, Day-header badges,
+Board sizing), §5 (invariant 7), and §7 (anti-patterns) all changed.
+Read the "Phase 2 — Amendment B" section of BUILD_PLAN.md.
+
+Replace the contents of design/ with the files from the latest design drop
+(handoff/, board.jsx, tokens.jsx, screens.jsx, workflows.jsx,
+components.jsx, design-canvas.jsx, Schedule Board Spec.html, and
+Schedule Board Spec — bundled.html). Commit that as a separate `chore: refresh design`
+commit on the patch branch before any code changes.
+
+Branch off main as `phase-2-patch-visual-refresh`. (If Amendment A is still
+unmerged, branch off the Amendment A branch instead and combine both in one PR.)
+
+Work TDD-first using the ordered red→green list in Amendment B.
+Regenerate the visual regression baseline only after all the assertion
+tests are green; inspect the new screenshot manually before committing.
+
+When complete:
+  - Write reviews/phase-2-patch-B.md using the template at the bottom of
+    BUILD_PLAN.md. Include before/after screenshots at 1440px and 1024px,
+    and one screenshot focused on the day-header row showing the
+    Mon–Fri vs Sat–Sun differentiation.
+  - Open a PR titled "Phase 2 patch B — visual refresh".
+  - Do not begin Phase 3 until the patch is merged.
+
+Constraints:
+  - Weekend muting is ONLY in the day-header badge — not in cells, not in
+    grid lines, not in cards. If your implementation makes Sat/Sun cells
+    look different from weekday cells in any way, you have gone too far.
+  - The wood frame is DELETED, not hidden. Remove the wrapper element,
+    not just its styles.
+  - The clamp formula is exactly: clamp(120, (containerWidth − railW − margin) / 7, 180).
+    Do not improvise different bounds.
+  - No new dependencies. No CSS framework. Surfaces live in tokens.ts.
+```
+
+### Quality gates for Amendment B
+- All existing unit and integration tests are either still green or updated and green. No skipped tests.
+- New visual baseline committed and matched on re-run.
+- Manual check: open the dev server at 1440×900, 1280×800, and 1024×768. The board's rendered width is ≥ 85% of the content area at every breakpoint above 1024px.
+- Manual check: the day-header row at 1440×900 shows visibly muted Sat/Sun badges next to fully-saturated Mon–Fri badges, without making the cells below look different.
 
 ---
 
 ## Phase 3 — Cards: create, edit, recolor, delete
 
-**Goal.** Workflows 01 and 04 fully working with persistence via `LocalStorageRepository`.
+**Goal.** Workflows 01 and 04 working with persistence via `LocalStorageRepository`.
 
 **Scope**
 - Click empty cell → blank peach card + caret + edit popover docked below.
 - Type → live update (and live marker-font switch when going all-caps).
 - Enter or blur → commit + persist + close popover.
 - Esc → cancel (if newly created, remove; if edited, revert).
-- Click existing card → edit popover with text input pre-filled and 8 swatches; clicking a swatch recolors live.
+- Click existing card → edit popover with text pre-filled and 8 swatches; clicking a swatch recolors live.
 - Delete button on popover removes card and attached threads.
-- Cmd/Ctrl-Z is **not** implemented in this phase (Phase 6).
 - `LocalStorageRepository` saves on every mutating action behind a 250ms debounce.
+- **Card schema gains** `createdAt: number` (set on create, never modified) **and** `updatedAt: number` (set on create, bumped on every mutation including text/color edits). Use an injected clock in the domain layer so tests stay deterministic.
 
-**Out of scope.** Drag, multi-card-in-cell visual stacking, undo/redo, threads, toolbar.
-
-**Session kickoff prompt**
-```
-Implement Phase 3 of BUILD_PLAN.md — workflows 01 and 04. Use the domain
-operations from Phase 1; do not duplicate any logic in components.
-LocalStorageRepository persists on a 250ms debounce. Pin behavior and rotation
-must remain stable across edits (CLAUDE.md invariant 6).
-```
+**Out of scope.** Drag, multi-card-in-cell stacking (Phase 4), undo/redo, threads, toolbar.
 
 **TDD plan**
-1. Integration: clicking an empty cell mounts an edit popover and focuses the input. The board state shows a new peach card immediately (optimistic).
-2. Integration: typing updates the rendered card live.
-3. Integration: pressing Enter commits and closes the popover; the card persists in the in-memory repository.
-4. Integration: pressing Esc on a *newly created* card removes it; the repository does not see a write.
-5. Integration: typing all-caps switches the rendered font to Permanent Marker (per `isMarker()`).
-6. Integration: clicking an existing card opens the popover with text pre-filled, no caret position jump.
-7. Integration: clicking a swatch updates the card color in the DOM and in the repository.
-8. Integration: clicking Delete removes the card from the DOM and the repository.
-9. Integration: rotation and pin color are unchanged after edit/recolor.
-10. E2E: workflow 01 storyboard reproduced (open page → click cell → type "Dress + light" → Enter → reload page → card still there).
-11. E2E: workflow 04 storyboard reproduced (click card → recolor coral → close → reload → coral).
+1. Unit (domain): `addCard` sets `createdAt` and `updatedAt` to the injected clock's value.
+2. Unit (domain): `updateCard` bumps `updatedAt` to the new clock value; `createdAt` is unchanged.
+3. Unit (domain): `moveCard` also bumps `updatedAt`.
+4. Integration: clicking an empty cell mounts an edit popover and focuses the input. Card appears optimistically.
+5. Integration: typing updates the rendered card live.
+6. Integration: Enter commits and closes; repository sees one write.
+7. Integration: Esc on a *newly created* card removes it; repository sees no write.
+8. Integration: typing all-caps switches font to Permanent Marker.
+9. Integration: clicking an existing card opens the popover with text pre-filled.
+10. Integration: clicking a swatch updates color in DOM and repository.
+11. Integration: Delete removes the card from the DOM and repository.
+12. Integration: rotation and pin color unchanged after edit/recolor.
+13. Integration: cards on Saturday (day=5) and Sunday (day=6) cells are clickable and editable.
+14. E2E: workflow 01 reproduced (click cell → type "Dress + light" → Enter → reload → still there).
+15. E2E: workflow 04 reproduced (click → recolor coral → reload → coral).
 
 **Test inventory**
 | Level | Count | What |
 |---|---|---|
-| Unit | ~6 | Popover behavior, debounce |
-| Integration | ~12 | The numbered scenarios above |
+| Unit | ~9 | Domain timestamp behavior + popover unit |
+| Integration | ~13 | The scenarios above |
 | E2E | 2 | Workflows 01 and 04 |
 
 **Quality gates**
-- The debounce window is exactly 250ms (asserted with fake timers).
-- Persistence layer is touched only by repository — components do not call `localStorage` directly (enforced by ESLint).
+- Debounce window exactly 250ms (fake timers).
+- Components do not call `localStorage` directly (ESLint).
 - Lighthouse a11y ≥ 95 on the editing screen.
-
-**Critical review report — `reviews/phase-3.md`**
-- Screen recording / GIF of workflows 01 and 04.
-- One paragraph on any UX decisions that diverged from the storyboards.
 
 ---
 
 ## Phase 4 — Cards: drag / move and multi-card stacking
 
-**Goal.** Workflow 02 fully working. Multi-card-in-cell renders correctly (the design allows it; cards stack/overlap slightly rather than resizing the grid).
+**Goal.** Workflow 02 working. Multi-card-in-cell renders with the deterministic stacking from CLAUDE.md §4.
 
 **Scope**
-- Press-and-hold (80ms) a card lifts it: scale 1.05, larger shadow, rotation reset to 0.
-- Drag highlights the nearest cell in blue with a hairline outline.
-- Release snaps to the cell center over 120ms ease-out.
-- Threads connected to the moved card re-route live during drag.
-- Two or more cards in the same cell stack with slight x/y offset (`ox`, `oy`) and `z-index` by insertion order.
-- Touch and pointer events both supported.
+- Press-and-hold (80ms) on a card lifts it: scale 1.05, larger shadow, rotation reset.
+- Drag highlights the nearest cell. Threads connected to the dragged card re-route live.
+- Release snaps over 120ms ease-out.
+- Two or more cards in the same cell stack per the deterministic offset formula in CLAUDE.md §4. Grid never grows.
+- **Card schema gains** `z: number` (stack order, monotonically increasing per board) **and** optional `offset: { x: number; y: number }` (computed at render time from cell occupancy).
+- Clicking through a stack: top card (highest `z`) opens.
+- **Cmd/Ctrl-click on a stacked cell** cycles the visible top card by rotating `z` values within the stack.
+- Touch + pointer events.
 
 **Out of scope.** Threads creation (Phase 5), undo (Phase 6).
 
-**Session kickoff prompt**
-```
-Implement Phase 4 of BUILD_PLAN.md — workflow 02 + multi-card cell stacking.
-Use pointer events. Press-and-hold threshold is 80ms; snap animation is 120ms
-ease-out; both pinned by tests. Threads must follow the dragged card live.
-```
-
 **TDD plan**
-1. Integration (fake timers): mousedown on a card for 80ms triggers the lift state (scale and shadow).
-2. Integration: mousedown for <80ms followed by mouseup is a click (opens edit popover).
-3. Integration: dragging over a cell highlights it with the same blue tint as Phase 3 cell hover.
-4. Integration: drop on an empty cell moves the card; repository receives one write.
-5. Integration: drop on the same cell is a no-op (no repository write).
-6. Integration: dropping into an already-occupied cell stacks both cards with non-zero `ox`/`oy`.
-7. Integration: while dragging, the live thread endpoints update on every frame to the card's current pointer position.
-8. Integration: snap animation duration is 120ms (asserted via mocked clock).
-9. E2E: workflow 02 storyboard reproduced.
+1. Unit (domain): a function `stackOffsets(n)` returns the i = 0..n-1 offsets per CLAUDE.md §4 formula; pinned by table-driven test for n = 1..5.
+2. Unit (domain): `addCard` into a non-empty cell assigns `z = max(existing z in cell) + 1`.
+3. Unit (domain): a function `cycleStack(board, cell)` returns a new board where the bottom card becomes the new top within that cell only.
+4. Integration (fake timers): mousedown on a card for 80ms triggers the lift state.
+5. Integration: mousedown <80ms then mouseup is a click (opens edit popover).
+6. Integration: dragging over a cell highlights it.
+7. Integration: drop on an empty cell moves the card; repository receives one write; `updatedAt` bumped.
+8. Integration: drop on the same cell is a no-op.
+9. Integration: dropping into an already-occupied cell stacks both cards with non-zero `offset` per the formula.
+10. Integration: dropping into the Sunday column works identically to weekdays.
+11. Integration: while dragging, live thread endpoints update on every frame.
+12. Integration: snap animation duration is 120ms.
+13. Integration: Cmd-click on a stacked cell cycles which card is rendered on top (`z` rotates within the cell).
+14. E2E: workflow 02 reproduced.
+15. E2E: a cell with 4 stacked cards renders all four with the deterministic offsets visible (screenshot).
 
 **Test inventory**
 | Level | Count | What |
 |---|---|---|
-| Integration | ~10 | All scenarios above |
-| E2E | 1 | Workflow 02 |
+| Unit | ~6 | Stacking helpers and z assignment |
+| Integration | ~11 | Drag and stack scenarios |
+| E2E | 2 | Workflow 02 + stacking screenshot |
 
 **Quality gates**
-- Dragging is 60fps on a 26-week board with 60 cards (asserted via Playwright trace, frame drops < 2).
+- Dragging is 60fps on a 26-week board with 60 cards (Playwright trace, frame drops < 2).
 - Touch support verified in Playwright mobile emulation.
 - No layout thrash during drag (use `transform`, not `top`/`left`).
-
-**Critical review report — `reviews/phase-4.md`**
-- Frame-rate trace under load.
-- Anything sacrificed to hit 60fps.
+- Stacking formula is unit-tested with explicit n=1..5 expected values — no "approximately" assertions.
 
 ---
 
@@ -313,32 +356,24 @@ ease-out; both pinned by tests. Threads must follow the dragged card live.
 **Goal.** Workflow 03 fully working.
 
 **Scope**
-- Hovering a card reveals a small red "thread handle" at its top-right corner.
-- Press-drag from handle draws a dashed in-progress line that follows the pointer.
-- Release on another card creates a thread (committed, persisted).
+- Hovering a card reveals a small red-brown thread handle at its top-right corner.
+- Press-drag from handle draws a dashed in-progress line.
+- Release on another card creates a thread.
 - Release on empty space cancels.
-- Click a thread (6px hit area) flashes it red for 100ms then deletes it.
-- Threads update their path live when either endpoint card is moved (already done in Phase 4 for the dragged card; here for the general case).
-
-**Out of scope.** Thread editing, labels, styling.
-
-**Session kickoff prompt**
-```
-Implement Phase 5 of BUILD_PLAN.md — workflow 03. Endpoint identity is the
-card ID, never the array index (CLAUDE.md invariant 10). A self-thread or
-duplicate is rejected silently (no error, no toast). Click hit area on
-threads is 6px wide; assert with a Playwright bounding-box check.
-```
+- Esc during drag cancels.
+- Click a thread (6px hit area) flashes red 100ms then deletes.
+- Threads update live when either endpoint card is moved.
 
 **TDD plan**
-1. Integration: hovering a card shows the thread handle; leaving the card hides it.
+1. Integration: hovering a card shows the thread handle; leaving hides it.
 2. Integration: drag from handle creates the dashed temporary path.
 3. Integration: release on a different card commits the thread; repository sees one write.
-4. Integration: release on the same card or empty space discards.
-5. Integration: clicking a thread shows the 100ms red flash, then removes from DOM and repository.
-6. Integration: deleting a card via Phase 3 popover also removes any thread that referenced it (invariant 9).
-7. Integration: moving an endpoint card (Phase 4) updates the thread path live.
-8. E2E: workflow 03 storyboard reproduced.
+4. Integration: release on same card or empty space discards.
+5. Integration: Esc during drag cancels.
+6. Integration: clicking a thread shows the 100ms red flash, then removes from DOM and repository.
+7. Integration: deleting a card removes any thread that referenced it.
+8. Integration: moving an endpoint card updates the thread path live.
+9. E2E: workflow 03 reproduced.
 
 **Test inventory**
 | Level | Count | What |
@@ -347,112 +382,97 @@ threads is 6px wide; assert with a Playwright bounding-box check.
 | E2E | 1 | Workflow 03 |
 
 **Quality gates**
-- A thread that references a deleted card cannot exist in any rendered state (invariant 9).
-- The thread hit area is verifiable (Playwright `boundingBox()` includes 6px around the path).
-
-**Critical review report — `reviews/phase-5.md`**
-- Screenshots of in-progress drag, committed thread, and deletion flash.
+- A thread referencing a deleted card cannot exist (invariant 9).
+- Thread hit area is verifiable via `boundingBox()`.
 
 ---
 
-## Phase 6 — Toolbar, undo/redo, week range
+## Phase 6 — Toolbar, undo/redo, week range, keyboard shortcuts
 
-**Goal.** Workflows 06 and the missing pieces of the toolbar.
+**Goal.** Workflow 06 + the locked keyboard shortcuts from CLAUDE.md §8.
 
 **Scope**
 - Toolbar (top-right, fixed): `Weeks N · Undo · Redo · Share`.
-- Undo/Redo: stack of board snapshots, capacity 50. Keyboard shortcuts `Cmd/Ctrl-Z` and `Cmd/Ctrl-Shift-Z`.
-- `Weeks N` opens a stepper (4–52).
-- Shrinking that would cut off cards prompts: *"N cards would be cut off — continue?"*. Cards are preserved off-board (invariant 8).
-- Share button opens the dialog (URL + Copy + summary). Copy puts the URL in the clipboard. Network sharing remains stubbed.
+- Undo/Redo: stack of board snapshots, capacity 50.
+- `Weeks N` opens an inline stepper (4–52).
+- Shrinking past `max(card.week) + 1` prompts: *"N cards would be cut off — continue?"*. Cards preserved off-board.
+- Share button opens dialog (URL + Copy + summary). Network sharing still stubbed.
+- **Keyboard shortcuts (all global, suppressed while a text input is focused):**
+  - `Cmd/Ctrl-Z` undo, `Cmd/Ctrl-Shift-Z` redo.
+  - `Backspace` deletes the selected card (when no input is focused, and a card is selected).
+  - `Arrow keys` move the selected card by exactly one cell in that direction, clamped to board bounds. Each keypress is one undo step.
 
-**Out of scope.** Real backend, real sharing across users.
-
-**Session kickoff prompt**
-```
-Implement Phase 6 of BUILD_PLAN.md. Undo/redo is a snapshot stack of size 50;
-all mutating operations push to it. Re-do is cleared on a fresh mutation.
-Keyboard shortcuts are global. Shrink-warning dialog is modal and dismissible.
-The Share dialog is real chrome but uses the still-local repository.
-```
+**Out of scope.** Real backend, real sharing.
 
 **TDD plan**
-1. Integration: every mutating action (add card, edit, move, delete, add thread, delete thread, resize weeks) pushes a snapshot.
-2. Integration: Cmd-Z reverts the last action and updates the UI.
+1. Integration: every mutating action pushes a snapshot.
+2. Integration: Cmd-Z reverts the last action.
 3. Integration: Cmd-Shift-Z re-applies; a fresh mutation clears the redo stack.
-4. Integration: stack capped at 50; oldest dropped first.
-5. Integration: shrinking weeks below `max(card.week)+1` shows the warning; canceling does not mutate.
-6. Integration: shrinking → confirm → regrow restores the off-board cards (invariant 8).
-7. Integration: Share dialog Copy puts the right URL in `navigator.clipboard`.
-8. E2E: workflow 06 storyboard reproduced.
+4. Integration: stack capped at 50; oldest dropped.
+5. Integration: shrinking weeks below `max(card.week) + 1` shows the warning; canceling does not mutate.
+6. Integration: shrinking → confirm → regrow restores off-board cards.
+7. Integration: Share dialog Copy puts the URL in `navigator.clipboard`.
+8. Integration: with a card selected, ↑ ↓ ← → each move it one cell, clamped at the edges. Repository receives one write per keypress.
+9. Integration: with a card selected and no input focused, Backspace deletes it.
+10. Integration: keyboard shortcuts do **not** fire while a text input is focused (verified for Backspace and arrows, separately).
+11. Integration: arrow-key moves bump `updatedAt` and produce one undo step each.
+12. E2E: workflow 06 reproduced.
+13. E2E: keyboard-only sequence — select a card, nudge it with arrows, Backspace it, Undo to restore, Redo to re-delete.
 
 **Test inventory**
 | Level | Count | What |
 |---|---|---|
-| Integration | ~10 | All scenarios above |
-| E2E | 1 | Workflow 06 |
+| Integration | ~12 | All scenarios above |
+| E2E | 2 | Workflow 06 + keyboard sequence |
 
 **Quality gates**
-- Undo stack is bounded; verified by a stress test that performs 60 actions.
-- Keyboard shortcuts do not fire while a text input is focused (verified).
-
-**Critical review report — `reviews/phase-6.md`**
-- A 60-step undo→redo cycle screen recording.
-- Confirmation that no action is *only* available via the keyboard (all actions reachable by mouse).
+- Undo stack is bounded; stress test with 60 actions.
+- All keyboard shortcuts have a "while input focused" no-op test.
+- No action is *only* reachable via keyboard (every shortcut has a mouse equivalent).
 
 ---
 
 ## Phase 7 — Persistence, URL routing, real sharing
 
-**Goal.** Workflow 05 fully working with a real backend.
+**Goal.** Workflow 05 working with a real backend.
 
-**Decision point.** This phase opens with a one-page decision doc in `reviews/phase-7-backend-decision.md` evaluating the three candidates (Cloudflare Workers + Durable Objects, Supabase, Node + SQLite + WebSockets). Pick one, commit, then implement.
+**Decision point.** This phase opens with a one-page decision doc in `reviews/phase-7-backend-decision.md` evaluating Cloudflare Workers + Durable Objects, Supabase, Node + SQLite + minimal HTTP. **The sync mechanism is locked: 10-second poll on the client** — the backend decision is only about where state lives, not how the client gets updates.
 
 **Scope**
-- `/b/<slug>` routing. Unknown slug → create empty board at that slug.
-- New board UI generates a slug (adjective-noun-number) and redirects to its URL.
-- `RemoteRepository` implements the same `BoardRepository` interface used everywhere.
-- Debounced writes (250ms) on every mutation.
-- Multi-user updates: incoming changes apply with LWW per card and per thread (invariant 4).
-- Share dialog shows the real URL and the real `lastEdited` / `cardCount` / `threadCount` summary.
+- `/` → home: redirects to a fresh slug.
+- `/b/<slug>` routing. Unknown slug → empty board created at that slug.
+- Slugs: two random words + 3-digit suffix (e.g. `oak-thread-942`).
+- `RemoteRepository` implements `BoardRepository`.
+- Debounced writes (250ms) per mutating action, batched per affected entity (card or thread).
+- `RemoteRepository` polls `GET /b/<slug>` every 10 seconds; the delta is merged into local state with LWW per card and per thread (invariant 4).
+- Share dialog shows the real URL and live `lastEdited` / `cardCount` / `threadCount` summary.
 - Optimistic UI: local mutations show immediately; server confirmation does not re-render.
 
-**Out of scope.** Conflict warnings, presence indicators, cursors, comments. None of those exist in v1.
-
-**Session kickoff prompt**
-```
-Implement Phase 7 of BUILD_PLAN.md. First commit the backend decision doc.
-Then implement RemoteRepository, URL routing, slug generation, optimistic
-updates, and last-writer-wins merge per card/thread. Two browser tabs must
-be able to edit the same board and see each other's changes within 1 second.
-```
+**Out of scope.** Conflict warnings, presence indicators, cursors, comments. WebSockets / SSE — not in v1.
 
 **TDD plan**
-1. Integration: visiting `/b/unknown-slug` creates a fresh empty board at that slug.
-2. Integration: any mutation is debounced 250ms then sent to the backend.
-3. Integration: incoming server update merges by card-id LWW.
-4. Integration: an incoming delete of a card I'm currently editing closes my popover (no data loss for unsent text).
-5. E2E (two browser contexts): tab A adds a card, tab B sees it within 1s.
-6. E2E (two contexts): both tabs edit the same card's color; the later write wins.
-7. E2E (two contexts): tab A deletes a card; tab B's thread referencing it disappears.
+1. Unit: slug generator returns `word-word-NNN` pattern; collisions tolerated by the backend (slugs are not enforced unique on the client).
+2. Integration: `/b/unknown-slug` creates a fresh empty board.
+3. Integration: any mutation is debounced 250ms then `PATCH`-ed.
+4. Unit: LWW merge — given local card with `updatedAt = T1` and incoming card with `updatedAt = T2`, the one with higher `updatedAt` wins, applied per-field.
+5. Integration: polling triggers every 10 seconds; the polling clock is injectable in tests.
+6. Integration: a poll response carrying a deleted card removes it locally; any thread referencing it is removed too.
+7. Integration: a poll response arriving while I'm editing a card does not steal focus from my input.
+8. E2E (two browser contexts): tab A adds a card, tab B sees it within 12 seconds (one poll cycle + slack).
+9. E2E (two contexts): both tabs edit the same card's color; the later write wins.
+10. E2E (two contexts): tab A deletes a card; tab B's thread referencing it disappears on the next poll.
 
 **Test inventory**
 | Level | Count | What |
 |---|---|---|
-| Unit | ~5 | LWW merge, slug generation |
-| Integration | ~10 | Routing, repository, debounce |
-| E2E | 3+ | Multi-tab scenarios |
+| Unit | ~6 | Slug, LWW merge |
+| Integration | ~10 | Routing, repository, debounce, polling |
+| E2E | 3 | Multi-tab scenarios |
 
 **Quality gates**
-- Two-tab convergence verified by Playwright (cross-context).
+- Two-tab convergence verified by Playwright (cross-context, with poll-cycle slack).
 - Network failure: writes queue and retry; no data loss on a 30s offline window.
-- Backend exposes only the two operations needed: `loadBoard(slug)`, `applyChange(slug, change)`. Nothing else.
-
-**Critical review report — `reviews/phase-7.md`**
-- Architecture diagram of the backend.
-- Decision doc with the alternatives considered.
-- Two-tab demo recording.
-- Failure-mode log: what happens on backend outage, on stale tab, on conflicting deletes.
+- Backend exposes only the operations needed: `GET /b/:slug`, `PATCH /b/:slug/cards/:id`, `PATCH /b/:slug/threads/:id`, `DELETE` for each, plus a board-level `PATCH` for `weeks`.
 
 ---
 
@@ -461,37 +481,29 @@ be able to edit the same board and see each other's changes within 1 second.
 **Goal.** Ship it.
 
 **Scope**
-- Keyboard nav: Tab cycles cells; Enter on a cell opens add-card flow; arrow keys nudge selected card; Delete removes selected card.
-- Screen reader: every card is announced as "card, color X, text Y, week Z, day D"; every thread as "thread from … to …".
-- Contrast: all chrome text meets WCAG AA against its surface.
-- Focus rings: visible (not the design's selected-blue alone) when navigation is keyboard.
+- Tab cycles cells; Enter on a cell opens add-card flow. (Arrow keys and Backspace come from Phase 6.)
+- Screen reader: each card is announced as "card, color X, text Y, week Z, day D" with day name spelled out; threads as "thread from … to …".
+- Contrast: chrome text meets WCAG AA against its (now light) surface. The weekend header at opacity 0.78 is verified to still meet contrast.
+- Focus rings visible when navigation is keyboard.
 - Performance: time-to-interactive on 26-week board with 80 cards ≤ 1.5s on a mid-spec laptop.
-- Cross-browser smoke: Chrome, Firefox, Safari, Edge — full E2E suite green in each.
-- Empty / error / loading states per design `screens.jsx`.
-- 404 board (rare given "any slug works", but a real 500 from the backend has a message).
-- README written for a new developer; explains how to run and how to deploy.
+- Cross-browser: Chrome, Firefox, Safari, Edge — full E2E green in each.
+- Empty / error / loading states per `design/screens.jsx`.
+- README for a new developer.
 
-**Out of scope.** Mobile-first layout (deferred to v2).
-
-**Session kickoff prompt**
-```
-Implement Phase 8 of BUILD_PLAN.md. Focus: a11y, perf, cross-browser, polish.
-Audit results land in reviews/phase-8.md with Lighthouse, axe, and a manual
-keyboard-only walkthrough. README is the new-developer entry point — review
-it after a fresh `git clone` simulating onboarding.
-```
+**Out of scope.** Mobile-first layout (v2).
 
 **TDD plan**
-1. Integration: axe-core runs as part of unit tests for every screen; zero violations.
-2. Integration: keyboard-only walkthrough scripted in Playwright — full add/edit/move/thread/delete cycle without a mouse.
-3. Integration: screen reader announcements verified via `getByRole` + `getByLabelText` assertions.
-4. E2E: full suite runs in all four browsers in CI.
-5. Visual regression: golden screenshots from Phase 2 still match.
+1. Integration: axe-core runs as part of unit tests for every screen; zero violations on the new light page background.
+2. Integration: keyboard-only full add/edit/move/thread/delete cycle in Playwright.
+3. Integration: screen reader announcements include the day name (Mon–Sun) correctly.
+4. Integration: contrast check on the muted weekend header — explicit assertion against WCAG AA for `#3a2410` on `#e9c79a` at 78% opacity (compute effective color).
+5. E2E: full suite runs in all four browsers in CI.
+6. Visual regression: golden screenshots from Phase 2 (post-Amendment-B) still match.
 
 **Test inventory**
 | Level | Count | What |
 |---|---|---|
-| Integration | ~8 | a11y per screen |
+| Integration | ~9 | a11y per screen + contrast check |
 | E2E | full suite × 4 browsers | Cross-browser smoke |
 
 **Quality gates**
@@ -499,17 +511,11 @@ it after a fresh `git clone` simulating onboarding.
 - axe-core: zero violations on every primary screen.
 - Bundle size ≤ 250kb gzipped (excluding fonts).
 
-**Critical review report — `reviews/phase-8.md`**
-- Lighthouse scores, axe report.
-- Cross-browser screenshot grid.
-- A "what we cut" list — everything intentionally not done for v1.
-- Sign-off: ready to launch / list of blockers.
-
 ---
 
 ## Critical review report template
 
-Copy this into `reviews/phase-N.md` at the end of each phase.
+Copy this into `reviews/phase-N.md` (or `reviews/phase-N-patch-X.md`) at the end of each phase.
 
 ```markdown
 # Phase N Review — <short name>
