@@ -33,11 +33,11 @@ function StoryboardCard({ children, narration }) {
   );
 }
 
-// Helper: small board for storyboards (5 weeks, narrow)
+// Helper: small board for storyboards (~270px wide, fits 7 columns)
 function MiniBoard({ cards = [], threads = [], threadDrag = null, highlightCell = null, ghostCard = null }) {
   return (
     <Board
-      weeks={4} cellW={68} cellH={36} railW={56} headerH={28}
+      weeks={4} cellW={30} cellH={24} railW={34} headerH={22}
       cards={cards} threads={threads}
       threadDrag={threadDrag} highlightCell={highlightCell} ghostCard={ghostCard}
       showHoles={false}
@@ -46,6 +46,11 @@ function MiniBoard({ cards = [], threads = [], threadDrag = null, highlightCell 
     />
   );
 }
+
+// MiniBoard cell geometry (for placing overlays in storyboards)
+const MB = { cellW:30, cellH:24, railW:34, headerH:22, scale: Math.min(30/56, 24/38) };
+const mbX = (d) => MB.railW + d*MB.cellW + MB.cellW/2;
+const mbY = (w) => MB.headerH + w*MB.cellH + MB.cellH/2;
 
 // ---- Workflow 1: Add a card ----
 function FlowAddCard() {
@@ -126,10 +131,9 @@ function FlowMoveCard() {
                 { w:2, d:0, c:'sky', t:'BUILD' },
               ]}
               threads={[]} />
-            <div style={{ position:'absolute', left:130, top:48, pointerEvents:'none' }}>
-              <div style={{ transform:'scale(1.08)' }}>
-                <Card color="peach" text="BLOCK" rot={0} style={{ boxShadow:'0 8px 18px rgba(0,0,0,.3), 0 2px 4px rgba(0,0,0,.2)' }} />
-              </div>
+            <div style={{ position:'absolute', left: mbX(1), top: mbY(0) - 4, transform:'translate(-50%, -50%) scale(1.08)', pointerEvents:'none' }}>
+              <Card color="peach" text="BLOCK" rot={0} size={MB.scale}
+                style={{ boxShadow:'0 8px 18px rgba(0,0,0,.3), 0 2px 4px rgba(0,0,0,.2)' }} />
             </div>
           </StoryboardCard>
         </Panel>
@@ -183,11 +187,11 @@ function FlowDrawThread() {
                   { w:2, d:1, c:'orange', t:'PROG MOCO' },
                 ]}
                 threads={[]} />
-              {/* handle dot at card 0 position */}
+              {/* handle dot at card 0 top-right */}
               <div style={{
-                position:'absolute', left:56 + 0*68 + 68/2 + 24, top:28 + 0*36 + 36/2 - 14,
-                width:10, height:10, borderRadius:'50%', background:'#9c5a2e',
-                boxShadow:'0 0 0 2px #fff, 0 1px 3px rgba(0,0,0,.3)', pointerEvents:'none',
+                position:'absolute', left: mbX(0) + 13, top: mbY(0) - 11,
+                width:8, height:8, borderRadius:'50%', background:'#9c5a2e',
+                boxShadow:'0 0 0 1.5px #fff, 0 1px 2px rgba(0,0,0,.3)', pointerEvents:'none',
               }}></div>
             </div>
           </StoryboardCard>
@@ -201,7 +205,7 @@ function FlowDrawThread() {
                 { w:1, d:2, c:'sky', t:'BUILD' },
                 { w:2, d:1, c:'orange', t:'PROG MOCO' },
               ]}
-              threadDrag={{ fromIdx:0, x: 56 + 2*68 + 68/2, y: 28 + 1*36 + 36/2 - 4 }}
+              threadDrag={{ fromIdx:0, x: mbX(2), y: mbY(1) - 2 }}
               threads={[]} />
           </StoryboardCard>
         </Panel>
@@ -228,9 +232,10 @@ function FlowDrawThread() {
                   { w:2, d:1, c:'orange', t:'PROG MOCO' },
                 ]}
                 threads={[{ from:0, to:1 }, { from:1, to:2 }]} />
-              {/* red flash indicator */}
+              {/* red flash indicator over the thread between RIG (w0,d0) and BUILD (w1,d2) */}
               <svg style={{ position:'absolute', inset:0, pointerEvents:'none' }} width="100%" height="100%">
-                <path d="M 130 50 Q 200 100 240 110" stroke="#d6463a" strokeWidth="3" fill="none" opacity="0.6" />
+                <path d={`M ${mbX(0)} ${mbY(0)} Q ${(mbX(0)+mbX(2))/2} ${(mbY(0)+mbY(1))/2 + 8} ${mbX(2)} ${mbY(1)}`}
+                  stroke="#d6463a" strokeWidth="2.5" fill="none" opacity="0.7" />
               </svg>
             </div>
           </StoryboardCard>
@@ -316,9 +321,9 @@ function FlowShare() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14, marginTop:18 }}>
         <Panel n={1} title="Open a board URL">
           <StoryboardCard narration="Any URL like /b/<slug> opens that board. If the slug is unknown, a new empty board is created at that slug. No login.">
-            <div style={{ padding:'40px 24px', background:'#3a2410', display:'flex', justifyContent:'center', alignItems:'center', gap:8 }}>
-              <div style={{ fontFamily:wF_anno, fontSize:11, color:'#d8c8a8', opacity:.7 }}>scheduleboard.app /</div>
-              <div style={{ fontFamily:wF_anno, fontSize:11, color:'#f5d257', background:'rgba(255,255,255,.08)', padding:'4px 8px', borderRadius:3 }}>oak-thread-942</div>
+            <div style={{ padding:'40px 24px', background:'linear-gradient(180deg, #eef0f4 0%, #e1e4ec 100%)', display:'flex', justifyContent:'center', alignItems:'center', gap:8 }}>
+              <div style={{ fontFamily:wF_anno, fontSize:11, color:'#7a8295', opacity:.9 }}>scheduleboard.app /</div>
+              <div style={{ fontFamily:wF_anno, fontSize:11, color:'#2a3142', background:'rgba(255,255,255,.7)', padding:'4px 8px', borderRadius:3, boxShadow:'inset 0 0 0 1px rgba(40,50,80,.12)' }}>oak-thread-942</div>
             </div>
           </StoryboardCard>
         </Panel>
@@ -363,7 +368,7 @@ function FlowWeekRange() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14, marginTop:18 }}>
         <Panel n={1} title="Click 'Weeks 26' in toolbar">
           <StoryboardCard narration="Toolbar reveals an inline number stepper. Range is 4–52. Mon date of week 1 stays fixed; weeks are added/removed from the bottom.">
-            <div style={{ padding:40, display:'flex', justifyContent:'center', background:'#3a2410' }}>
+            <div style={{ padding:40, display:'flex', justifyContent:'center', background:'linear-gradient(180deg, #eef0f4 0%, #e1e4ec 100%)' }}>
               <Toolbar weeks={26} />
             </div>
           </StoryboardCard>
