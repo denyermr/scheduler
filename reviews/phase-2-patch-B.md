@@ -121,7 +121,7 @@ Local, on the head commit `34bdb03` of `phase-2-patch-visual-refresh`:
 - [x] Visual regression baseline regenerated and matched — `tests/e2e/hero-visual.spec.ts-snapshots/hero-board-chromium-darwin.png`. Previous baseline archived per the Amendment B brief.
 - [x] Board width ≥ 85 % of content area at 1440 / 1280 / 1024 (manual check; ~96 % / ~96 % / ~95 % respectively).
 - [x] No new dependencies, no CSS framework, surfaces all in `tokens.ts`.
-- [ ] **CI green on the head commit** — pending push. Will update once the PR is opened.
+- [x] **CI green on the head commit** — PR [#5](https://github.com/denyermr/scheduler/pull/5), run [25985156949](https://github.com/denyermr/scheduler/actions/runs/25985156949), all 12 steps success in 1m 23s.
 
 ## Recommendation
 
