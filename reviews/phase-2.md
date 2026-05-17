@@ -138,7 +138,7 @@ Local, on the head commit of `phase-2-render` (pre-push, generated this report):
 - [x] Visual regression baseline committed and matched — `tests/e2e/hero-visual.spec.ts-snapshots/hero-board-chromium-darwin.png` (360 KB), test passes on rerun.
 - [x] Lighthouse desktop performance ≥ 90 — actual **99/100**.
 - [x] Card palette is the only set of fills used — pinned by `Board > uses only the 8-color palette for card fills`.
-- [ ] **CI green on the head commit** — pending push. Will update this line once the PR is opened.
+- [x] **CI green on the head commit** — PR [#3](https://github.com/denyermr/scheduler/pull/3), run [25972258623](https://github.com/denyermr/scheduler/actions/runs/25972258623), all 12 steps success in 1m 40s. Per-step: install 3s · lint 3s · typecheck 3s · test+coverage 6s · build 3s · playwright install 54s · e2e 15s.
 
 ## Recommendation
 
