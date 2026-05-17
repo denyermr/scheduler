@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Schedule Board — Hero artboard isolated (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Permanent+Marker&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body, #root { height:100%; margin:0; }
+  body { font-family: 'Manrope', -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="../../design/board.jsx"></script>
+<script type="text/babel" src="../../design/tokens.jsx"></script>
+<script type="text/babel" src="../../design/components.jsx"></script>
+<script type="text/babel" src="../../design/screens.jsx"></script>
+<script type="text/babel">
+  const Hero = window.HeroBoardScreen;
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    React.createElement('div', { style: { width: 1440, height: 1300 } },
+      React.createElement(Hero)
+    )
+  );
+</script>
+</body>
+</html>
