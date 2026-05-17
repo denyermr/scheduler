@@ -1,3 +1,4 @@
+import { type Clock, defaultClock } from './clock';
 import { cardId as defaultCardId, threadId as defaultThreadId } from './ids';
 import { defaultRng, randomPin, randomRotation, type Rng } from './random';
 import {
@@ -75,6 +76,8 @@ export type AddCardInput = {
   text?: string;
   rng?: Rng;
   newId?: () => CardId;
+  /** Injected clock; falls back to the deterministic zero clock for tests. */
+  clock?: Clock;
 };
 
 export function addCard(
@@ -85,7 +88,9 @@ export function addCard(
   assertValidDay(input.day, 'addCard');
 
   const rng = input.rng ?? defaultRng;
+  const clock = input.clock ?? defaultClock;
   const id = input.newId ? input.newId() : defaultCardId(rng);
+  const now = clock();
   const card: Card = {
     id,
     week: input.week,
@@ -94,6 +99,8 @@ export function addCard(
     text: input.text ?? '',
     rotation: randomRotation(rng),
     pin: randomPin(rng),
+    createdAt: now,
+    updatedAt: now,
   };
   return {
     board: { ...board, cards: [...board.cards, card] },
@@ -101,10 +108,13 @@ export function addCard(
   };
 }
 
+export type UpdateCardOptions = { clock?: Clock };
+
 export function updateCard(
   board: Board,
   cardId: CardId,
   patch: { text?: string; color?: Color },
+  options: UpdateCardOptions = {},
 ): Board {
   const idx = findCardIndex(board, cardId);
   if (idx === -1) {
@@ -114,18 +124,23 @@ export function updateCard(
   if (existing === undefined) {
     throw new Error(`updateCard: unreachable: index ${String(idx)} missing`);
   }
+  const clock = options.clock ?? defaultClock;
   const next: Card = {
     ...existing,
     ...(patch.text !== undefined ? { text: patch.text } : {}),
     ...(patch.color !== undefined ? { color: patch.color } : {}),
+    updatedAt: clock(),
   };
   return { ...board, cards: replaceAt(board.cards, idx, next) };
 }
+
+export type MoveCardOptions = { clock?: Clock };
 
 export function moveCard(
   board: Board,
   cardId: CardId,
   to: { week: number; day: Day },
+  options: MoveCardOptions = {},
 ): Board {
   assertOnBoardWeek(to.week, board.weeks, 'moveCard');
   assertValidDay(to.day, 'moveCard');
@@ -141,7 +156,13 @@ export function moveCard(
   if (existing.week === to.week && existing.day === to.day) {
     return board;
   }
-  const next: Card = { ...existing, week: to.week, day: to.day };
+  const clock = options.clock ?? defaultClock;
+  const next: Card = {
+    ...existing,
+    week: to.week,
+    day: to.day,
+    updatedAt: clock(),
+  };
   return { ...board, cards: replaceAt(board.cards, idx, next) };
 }
 
