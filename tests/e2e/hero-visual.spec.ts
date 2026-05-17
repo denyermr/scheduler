@@ -22,8 +22,10 @@ test.describe('hero board visual regression', () => {
     await page.evaluate(() => document.fonts.ready);
     // Give the cork texture / pin-hole layout a tick to settle.
     await page.waitForTimeout(300);
-    const frame = page.locator('[data-testid="board-frame"]');
-    await expect(frame).toHaveScreenshot('hero-board.png', {
+    // The wood frame was deleted in Amendment B — the cork surface IS the
+    // outer board element now, sitting on the light page via a floating shadow.
+    const board = page.locator('[data-testid="board-surface"]');
+    await expect(board).toHaveScreenshot('hero-board.png', {
       maxDiffPixelRatio: 0.02,
     });
   });

@@ -6,9 +6,9 @@ test('home page renders the schedule board chrome', async ({ page }) => {
   await expect(page.getByText('scheduleboard.app /')).toBeVisible();
 });
 
-test('hero board shows all 5 day headers', async ({ page }) => {
+test('hero board shows all 7 day headers (Mon..Sun)', async ({ page }) => {
   await page.goto('/');
-  for (const label of ['MON', 'TUES', 'WED', 'THURS', 'FRI']) {
+  for (const label of ['MON', 'TUES', 'WED', 'THURS', 'FRI', 'SAT', 'SUN']) {
     await expect(page.getByText(label, { exact: true })).toBeVisible();
   }
 });

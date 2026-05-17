@@ -19,7 +19,7 @@ export const PIN_COLORS = [
 ] as const;
 export type Pin = (typeof PIN_COLORS)[number];
 
-export const DAYS = [0, 1, 2, 3, 4] as const;
+export const DAYS = [0, 1, 2, 3, 4, 5, 6] as const;
 export type Day = (typeof DAYS)[number];
 
 export type Week = number;

@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Board } from './ui/Board';
-import { FONTS, SURFACE } from './ui/tokens';
+import {
+  FONTS,
+  PAGE_BG,
+  URL_CHIP_BRIGHT,
+  URL_CHIP_DIM,
+} from './ui/tokens';
 import {
   DEMO_SLUG,
   LocalStorageRepository,
@@ -10,8 +15,37 @@ import type { BoardRepository } from './persistence/repository';
 
 const repository: BoardRepository = new LocalStorageRepository();
 
+const DEFAULT_CONTAINER_WIDTH = 1440;
+
+function useContainerWidth(): {
+  ref: React.RefObject<HTMLDivElement>;
+  width: number;
+} {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(DEFAULT_CONTAINER_WIDTH);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = (): void => {
+      setWidth(el.clientWidth);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return (): void => window.removeEventListener('resize', measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return (): void => ro.disconnect();
+  }, []);
+
+  return { ref, width };
+}
+
 export function App() {
   const [board, setBoard] = useState<BoardModel | null>(null);
+  const { ref: stageRef, width: stageWidth } = useContainerWidth();
 
   useEffect(() => {
     void repository.load(DEMO_SLUG).then(setBoard);
@@ -23,7 +57,8 @@ export function App() {
       style={{
         flex: 1,
         minHeight: '100vh',
-        background: SURFACE.page,
+        backgroundImage: PAGE_BG,
+        backgroundColor: '#eef0f4',
         padding: '24px 28px 28px',
         display: 'flex',
         flexDirection: 'column',
@@ -41,26 +76,39 @@ export function App() {
           style={{
             fontFamily: FONTS.body,
             fontSize: 13,
-            color: '#d8c8a8',
             fontWeight: 500,
             letterSpacing: '0.01em',
           }}
         >
-          <span style={{ opacity: 0.7 }}>scheduleboard.app / </span>
-          <span style={{ fontFamily: FONTS.mono }}>{DEMO_SLUG}</span>
+          <span
+            data-testid="url-chip-dim"
+            style={{ color: URL_CHIP_DIM, opacity: 0.7 }}
+          >
+            scheduleboard.app /{' '}
+          </span>
+          <span
+            data-testid="url-chip-bright"
+            style={{ fontFamily: FONTS.mono, color: URL_CHIP_BRIGHT }}
+          >
+            {DEMO_SLUG}
+          </span>
         </div>
-        {/* Toolbar lands in Phase 6 — left as a placeholder so the page reserves
-            its hero-layout chrome row. */}
-        <div data-testid="toolbar-placeholder" aria-hidden style={{ width: 1, height: 36 }} />
+        {/* Toolbar lands in Phase 6 — placeholder reserves the row height. */}
+        <div
+          data-testid="toolbar-placeholder"
+          aria-hidden
+          style={{ width: 1, height: 36 }}
+        />
       </header>
       <div
+        ref={stageRef}
         style={{
           display: 'flex',
           justifyContent: 'center',
           flex: 1,
         }}
       >
-        {board && <Board board={board} />}
+        {board && <Board board={board} containerWidth={stageWidth} />}
       </div>
     </main>
   );

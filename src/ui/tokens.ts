@@ -21,13 +21,25 @@ export const PIN_PALETTE = {
   white: '#f5f1e6',
 } as const satisfies Record<string, Pin>;
 
+/**
+ * Page background — the soft cool off-white the board floats on (v2).
+ * Matches the SCREEN_BG gradient in design/screens.jsx.
+ */
+export const PAGE_BG = `
+  radial-gradient(ellipse 900px 700px at 12% -6%, rgba(180,200,230,0.35), transparent 60%),
+  radial-gradient(ellipse 1100px 800px at 105% 110%, rgba(200,210,225,0.30), transparent 65%),
+  linear-gradient(180deg, #eef0f4 0%, #e1e4ec 100%)
+`;
+
+export const URL_CHIP_DIM = '#7a8295';
+export const URL_CHIP_BRIGHT = '#2a3142';
+
 export const SURFACE = {
-  page: '#3a2410',
   cork: 'linear-gradient(180deg, #c9a978 0%, #b89465 100%)',
-  wood: 'linear-gradient(180deg, #b8845a 0%, #a06c3e 40%, #8a5530 100%)',
   paper: '#f6f2ec',
   inkDark: '#2a1f15',
   inkMid: '#6b5a48',
+  inkOnCork: '#3a2410',
 } as const;
 
 export const CORK_TEXTURE_BG = `
@@ -39,6 +51,16 @@ export const CORK_TEXTURE_BG = `
 
 export const CORK_TEXTURE_SIZE =
   '13px 13px, 9px 9px, 17px 17px, 11px 11px, 100% 100%';
+
+/** Cork inner glow + hairline edge (v2 — softer + cooler than v1). */
+export const CORK_INSET_SHADOW =
+  'inset 0 0 28px rgba(60,30,10,.16), inset 0 0 0 1px rgba(40,30,15,.28)';
+
+export const CORK_RADIUS = 3;
+
+/** Floating elevated shadow that replaces the wood frame (v2). */
+export const BOARD_FLOAT_SHADOW =
+  '0 40px 80px -24px rgba(30,40,60,.28), 0 14px 32px -12px rgba(30,40,60,.18), 0 2px 6px rgba(30,40,60,.10)';
 
 export const FONTS = {
   caveat: "'Caveat', cursive",
@@ -55,25 +77,18 @@ export const THREAD_STROKE = '#9c5a2e';
 export const THREAD_WIDTH = 1.8;
 export const THREAD_OPACITY = 0.92;
 
-export const BOARD_DEFAULT_METRICS = {
-  cellW: 56,
-  cellH: 38,
-  railW: 64,
-  headerH: 32,
-} as const;
-
-export const BOARD_HERO_METRICS = {
-  cellW: 84,
-  cellH: 42,
-  railW: 80,
-  headerH: 36,
-} as const;
-
-export const FRAME_PADDING = {
-  top: 8,
-  right: 14,
-  bottom: 24,
-  left: 12,
+/** Day-header badge styling. Weekend (Sat=5, Sun=6) is muted. */
+export const DAY_HEADER_BADGE = {
+  weekday: {
+    fill: '#F4B584',
+    fontSize: 18,
+    opacity: 1,
+  },
+  weekend: {
+    fill: '#e9c79a',
+    fontSize: 16,
+    opacity: 0.78,
+  },
 } as const;
 
 export const CARD_BASE = {
@@ -87,8 +102,17 @@ export const CARD_BASE = {
 
 export const PIN_SIZE = 5;
 
-const DAY_LABELS = ['MON', 'TUES', 'WED', 'THURS', 'FRI'] as const;
+const DAY_LABELS = [
+  'MON',
+  'TUES',
+  'WED',
+  'THURS',
+  'FRI',
+  'SAT',
+  'SUN',
+] as const;
 export const DAY_HEADER_LABELS: readonly string[] = DAY_LABELS;
+export const WEEKEND_DAY_INDICES: readonly number[] = [5, 6];
 
 export const CARD_PALETTE_FILLS: readonly string[] = CARD_COLORS.map(
   (k) => CARD_PALETTE[k].fill,
@@ -114,4 +138,45 @@ export function threadPathD(
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2 + sag;
   return `M ${String(x1)} ${String(y1)} Q ${String(mx)} ${String(my)} ${String(x2)} ${String(y2)}`;
+}
+
+/** Canonical metrics. Header + rail are fixed; cell dimensions are fluid. */
+export const BOARD_FIXED_METRICS = {
+  railW: 64,
+  headerH: 32,
+  horizontalMargin: 48,
+} as const;
+
+export const CELL_W_MIN = 120;
+export const CELL_W_MAX = 180;
+export const CELL_ASPECT = 0.55;
+
+export type BoardMetrics = {
+  cellW: number;
+  cellH: number;
+  railW: number;
+  headerH: number;
+};
+
+/**
+ * Compute the per-cell metrics for a given container width, per CLAUDE.md §4
+ * "Board sizing (fluid)":
+ *   cellW = clamp(120, (containerWidth − railW − margin) / 7, 180)
+ *   cellH = round(cellW × 0.55)
+ */
+export function computeBoardMetrics(
+  containerWidth: number,
+  opts?: {
+    railW?: number;
+    headerH?: number;
+    margin?: number;
+  },
+): BoardMetrics {
+  const railW = opts?.railW ?? BOARD_FIXED_METRICS.railW;
+  const headerH = opts?.headerH ?? BOARD_FIXED_METRICS.headerH;
+  const margin = opts?.margin ?? BOARD_FIXED_METRICS.horizontalMargin;
+  const raw = (containerWidth - railW - margin) / 7;
+  const cellW = clamp(raw, CELL_W_MIN, CELL_W_MAX);
+  const cellH = Math.round(cellW * CELL_ASPECT);
+  return { cellW, cellH, railW, headerH };
 }
