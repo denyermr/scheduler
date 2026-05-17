@@ -36,6 +36,10 @@ export type Card = {
   readonly text: string;
   readonly rotation: Rotation;
   readonly pin: Pin;
+  /** Unix epoch ms set on create, never modified. */
+  readonly createdAt: number;
+  /** Unix epoch ms bumped on every mutation (text, color, week, day). */
+  readonly updatedAt: number;
 };
 
 export type Thread = {

@@ -16,6 +16,11 @@ export class InMemoryRepository implements BoardRepository {
     return Promise.resolve(this.store.get(slug) ?? null);
   }
 
+  save(slug: string, board: Board): Promise<void> {
+    this.store.set(slug, board);
+    return Promise.resolve();
+  }
+
   set(slug: string, board: Board): void {
     this.store.set(slug, board);
   }

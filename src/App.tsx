@@ -1,5 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { Clock } from './domain/clock';
 import { Board } from './ui/Board';
+import { EditPopover } from './ui/EditPopover';
 import {
   FONTS,
   PAGE_BG,
@@ -10,12 +12,13 @@ import {
   DEMO_SLUG,
   LocalStorageRepository,
 } from './persistence/localStorage';
-import type { Board as BoardModel } from './domain/types';
 import type { BoardRepository } from './persistence/repository';
-
-const repository: BoardRepository = new LocalStorageRepository();
+import { useBoardEditor } from './state/useBoardEditor';
 
 const DEFAULT_CONTAINER_WIDTH = 1440;
+// Production-side wall clock. The domain stays pure: it never calls Date.now()
+// directly; App injects the real clock here at the system boundary.
+const realClock: Clock = () => Date.now();
 
 function useContainerWidth(): {
   ref: React.RefObject<HTMLDivElement>;
@@ -43,13 +46,40 @@ function useContainerWidth(): {
   return { ref, width };
 }
 
-export function App() {
-  const [board, setBoard] = useState<BoardModel | null>(null);
+export type AppProps = {
+  repository?: BoardRepository;
+  slug?: string;
+  clock?: Clock;
+  debounceMs?: number;
+};
+
+export function App({
+  repository: repositoryProp,
+  slug = DEMO_SLUG,
+  clock = realClock,
+  debounceMs,
+}: AppProps = {}) {
+  const repository = useMemo<BoardRepository>(
+    () => repositoryProp ?? new LocalStorageRepository(),
+    [repositoryProp],
+  );
+  const {
+    board,
+    editor,
+    beginNew,
+    beginEdit,
+    setEditingText,
+    setEditingColor,
+    commitEdit,
+    cancelEdit,
+    deleteEditing,
+  } = useBoardEditor({ repository, slug, clock, debounceMs });
   const { ref: stageRef, width: stageWidth } = useContainerWidth();
 
-  useEffect(() => {
-    void repository.load(DEMO_SLUG).then(setBoard);
-  }, []);
+  const editingCard =
+    editor.kind === 'editing' && board !== null
+      ? board.cards.find((c) => c.id === editor.cardId)
+      : undefined;
 
   return (
     <main
@@ -90,7 +120,7 @@ export function App() {
             data-testid="url-chip-bright"
             style={{ fontFamily: FONTS.mono, color: URL_CHIP_BRIGHT }}
           >
-            {DEMO_SLUG}
+            {slug}
           </span>
         </div>
         {/* Toolbar lands in Phase 6 — placeholder reserves the row height. */}
@@ -108,7 +138,30 @@ export function App() {
           flex: 1,
         }}
       >
-        {board && <Board board={board} containerWidth={stageWidth} />}
+        {board && (
+          <Board
+            board={board}
+            containerWidth={stageWidth}
+            onCellClick={beginNew}
+            onCardClick={beginEdit}
+            popoverForCard={
+              editor.kind === 'editing' ? editor.cardId : undefined
+            }
+            popover={
+              editingCard ? (
+                <EditPopover
+                  text={editingCard.text}
+                  color={editingCard.color}
+                  onTextChange={setEditingText}
+                  onColorChange={setEditingColor}
+                  onCommit={commitEdit}
+                  onCancel={cancelEdit}
+                  onDelete={deleteEditing}
+                />
+              ) : null
+            }
+          />
+        )}
       </div>
     </main>
   );

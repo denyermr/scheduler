@@ -1,5 +1,10 @@
-import type { CSSProperties } from 'react';
-import type { Board as BoardModel, Card as CardModel } from '../domain/types';
+import type { CSSProperties, ReactNode } from 'react';
+import { DAYS, type Day } from '../domain/types';
+import type {
+  Board as BoardModel,
+  CardId,
+  Week,
+} from '../domain/types';
 import { Card } from './Card';
 import { Thread, ThreadShadowDefs, THREAD_FILTER_ID } from './Thread';
 import {
@@ -17,6 +22,7 @@ import {
   GRID_LINE,
   PIN_PALETTE,
   WEEKEND_DAY_INDICES,
+  cellCenter,
   computeBoardMetrics,
 } from './tokens';
 
@@ -29,10 +35,17 @@ export type BoardProps = {
   weekLabels?: readonly string[];
   /** Inject deterministic pseudo-randomness for header tilt & pin holes (tests / SSR). */
   decorationSeed?: number;
+  onCellClick?: (week: Week, day: Day) => void;
+  onCardClick?: (cardId: CardId) => void;
+  /** Optional overlay (e.g. EditPopover) positioned below the given card. */
+  popoverForCard?: CardId;
+  popover?: ReactNode;
 };
 
 const DAYS_PER_WEEK = 7;
 const WEEKEND_SET = new Set<number>(WEEKEND_DAY_INDICES);
+const POPOVER_WIDTH = 220;
+const POPOVER_GAP = 8;
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -60,16 +73,6 @@ function computeWeekLabels(startMonday: string, count: number): readonly string[
   return out;
 }
 
-function cellCenter(
-  card: Pick<CardModel, 'week' | 'day'>,
-  metrics: { cellW: number; cellH: number; railW: number; headerH: number },
-): { x: number; y: number } {
-  return {
-    x: metrics.railW + card.day * metrics.cellW + metrics.cellW / 2,
-    y: metrics.headerH + card.week * metrics.cellH + metrics.cellH / 2,
-  };
-}
-
 const DEFAULT_CONTAINER_WIDTH = 1440;
 
 export function Board({
@@ -79,6 +82,10 @@ export function Board({
   showThreads = true,
   weekLabels,
   decorationSeed = 1234,
+  onCellClick,
+  onCardClick,
+  popoverForCard,
+  popover,
 }: BoardProps): JSX.Element {
   const { weeks } = board;
   const { cellW, cellH, railW, headerH } = computeBoardMetrics(containerWidth);
@@ -275,10 +282,37 @@ export function Board({
                 borderRadius: '50%',
                 background: `radial-gradient(circle at 30% 30%, #fff8 0 18%, ${c} 20% 100%)`,
                 boxShadow: '0 0.6px 1.2px rgba(0,0,0,.4)',
+                pointerEvents: 'none',
               }}
             />
           );
         })}
+
+      {/* Cell click overlay (Phase 3 — empty-cell clicks fire onCellClick).
+          Cards render after this so their clicks take precedence. */}
+      {onCellClick &&
+        Array.from({ length: weeks }).flatMap((_, week) =>
+          DAYS.map((day) => (
+            <div
+              key={`cell-${String(week)}-${String(day)}`}
+              data-testid={`cell-${String(week)}-${String(day)}`}
+              data-cell-week={week}
+              data-cell-day={day}
+              onClick={() => {
+                onCellClick(week, day);
+              }}
+              style={{
+                position: 'absolute',
+                left: railW + day * cellW,
+                top: headerH + week * cellH,
+                width: cellW,
+                height: cellH,
+                cursor: 'cell',
+                background: 'transparent',
+              }}
+            />
+          )),
+        )}
 
       {/* Cards */}
       {board.cards
@@ -290,11 +324,20 @@ export function Board({
               key={card.id}
               data-testid="card-slot"
               data-card-id={card.id}
+              onClick={
+                onCardClick
+                  ? (e): void => {
+                      e.stopPropagation();
+                      onCardClick(card.id);
+                    }
+                  : undefined
+              }
               style={{
                 position: 'absolute',
                 left: x,
                 top: y,
                 transform: 'translate(-50%, -50%)',
+                cursor: onCardClick ? 'pointer' : 'default',
               }}
             >
               <Card card={card} size={cardSize} />
@@ -331,6 +374,34 @@ export function Board({
           })}
         </svg>
       )}
+
+      {/* Edit popover positioned beneath the editing card. */}
+      {popoverForCard !== undefined &&
+        popover !== undefined &&
+        (() => {
+          const card = cardsById.get(popoverForCard);
+          if (!card) return null;
+          const { x, y } = cellCenter(card, { cellW, cellH, railW, headerH });
+          const topRaw = y + cellH / 2 + POPOVER_GAP;
+          const leftRaw = x - POPOVER_WIDTH / 2;
+          const left = Math.max(
+            4,
+            Math.min(W - POPOVER_WIDTH - 4, leftRaw),
+          );
+          return (
+            <div
+              data-testid="popover-anchor"
+              style={{
+                position: 'absolute',
+                top: topRaw,
+                left,
+                zIndex: 30,
+              }}
+            >
+              {popover}
+            </div>
+          );
+        })()}
     </div>
   );
 }

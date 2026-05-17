@@ -76,6 +76,38 @@ export default defineConfig([
           message: 'src/domain must stay pure — no browser globals.',
         },
       ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.object.name='Date'][callee.property.name='now']",
+          message:
+            'src/domain must stay pure — inject a Clock instead of calling Date.now().',
+        },
+        {
+          selector: "NewExpression[callee.name='Date']",
+          message:
+            'src/domain must stay pure — inject a Clock instead of `new Date()`.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/ui/**/*.{ts,tsx}', 'src/state/**/*.{ts,tsx}', 'src/App.tsx'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'localStorage',
+          message:
+            'Components must not touch localStorage directly — go through BoardRepository.',
+        },
+        {
+          name: 'sessionStorage',
+          message:
+            'Components must not touch sessionStorage directly — go through BoardRepository.',
+        },
+      ],
     },
   },
   {

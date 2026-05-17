@@ -1,4 +1,10 @@
-import { CARD_COLORS, type Color, type Pin } from '../domain/types';
+import {
+  CARD_COLORS,
+  type Color,
+  type Day,
+  DAYS,
+  type Pin,
+} from '../domain/types';
 
 export type ColorToken = { readonly fill: string; readonly ink: string };
 
@@ -179,4 +185,38 @@ export function computeBoardMetrics(
   const cellW = clamp(raw, CELL_W_MIN, CELL_W_MAX);
   const cellH = Math.round(cellW * CELL_ASPECT);
   return { cellW, cellH, railW, headerH };
+}
+
+/** Pixel center of the (week, day) cell on the cork surface. */
+export function cellCenter(
+  pos: { week: number; day: Day },
+  metrics: BoardMetrics,
+): { x: number; y: number } {
+  return {
+    x: metrics.railW + pos.day * metrics.cellW + metrics.cellW / 2,
+    y: metrics.headerH + pos.week * metrics.cellH + metrics.cellH / 2,
+  };
+}
+
+/**
+ * Reverse of `cellCenter`: pixel → (week, day). Returns null when the point
+ * is outside the grid (header row, week rail, or past the board edges).
+ * Phase 3 click-to-create routes via per-cell DOM hit targets, but Phase 4's
+ * drag-over will read continuous coordinates through this helper.
+ */
+export function cellAt(
+  x: number,
+  y: number,
+  metrics: BoardMetrics,
+  weeks: number,
+): { week: number; day: Day } | null {
+  const { cellW, cellH, railW, headerH } = metrics;
+  if (x < railW || y < headerH) return null;
+  const dayIdx = Math.floor((x - railW) / cellW);
+  const week = Math.floor((y - headerH) / cellH);
+  if (dayIdx < 0 || dayIdx >= DAYS.length) return null;
+  if (week < 0 || week >= weeks) return null;
+  const day = DAYS[dayIdx];
+  if (day === undefined) return null;
+  return { week, day };
 }
