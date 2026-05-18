@@ -285,6 +285,122 @@ describe('<Board /> — Amendment B visual refresh', () => {
   });
 });
 
+describe('<Board /> — Phase 4 in-cell stacking', () => {
+  function makeStackBoard(n: number) {
+    let board = createBoard({ startMonday: '2024-05-27', weeks: 4 });
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const r = addCard(board, {
+        week: 1,
+        day: 2,
+        color: 'peach',
+        text: `c${String(i)}`,
+        newId: () => `card_stack_${String(i)}`,
+        clock: () => 1000 + i,
+      });
+      board = r.board;
+      ids.push(r.cardId);
+    }
+    return { board, ids };
+  }
+
+  it('a single card in a cell renders at the cell centre (no offset)', () => {
+    const { board, ids } = makeStackBoard(1);
+    render(<Board board={board} containerWidth={TEST_CONTAINER} />);
+    const slot = document.querySelector(
+      `[data-card-id="${ids[0] ?? ''}"]`,
+    ) as HTMLElement | null;
+    expect(slot).not.toBeNull();
+    const expectedX = METRICS.railW + 2 * METRICS.cellW + METRICS.cellW / 2;
+    const expectedY =
+      METRICS.headerH + 1 * METRICS.cellH + METRICS.cellH / 2;
+    expect(slot?.style.left).toBe(`${String(expectedX)}px`);
+    expect(slot?.style.top).toBe(`${String(expectedY)}px`);
+  });
+
+  it('4 cards in a cell offset deterministically per stackOffsets(4)', () => {
+    const { board, ids } = makeStackBoard(4);
+    render(<Board board={board} containerWidth={TEST_CONTAINER} />);
+
+    const centreX = METRICS.railW + 2 * METRICS.cellW + METRICS.cellW / 2;
+    const centreY = METRICS.headerH + 1 * METRICS.cellH + METRICS.cellH / 2;
+
+    // Order is createdAt-ascending: ids[0] = i=0, ids[1] = i=1, ...
+    const expected = [
+      { x: centreX + 4, y: centreY + 3 },
+      { x: centreX - 7, y: centreY - 5.5 },
+      { x: centreX + 10, y: centreY + 8 },
+      { x: centreX - 13, y: centreY - 10.5 },
+    ];
+
+    expected.forEach((exp, i) => {
+      const slot = document.querySelector(
+        `[data-card-id="${ids[i] ?? ''}"]`,
+      ) as HTMLElement | null;
+      expect(slot, `card index ${String(i)}`).not.toBeNull();
+      expect(slot?.style.left).toBe(`${String(exp.x)}px`);
+      expect(slot?.style.top).toBe(`${String(exp.y)}px`);
+    });
+  });
+
+  it('renders the higher-z card on top via CSS zIndex', () => {
+    const { board, ids } = makeStackBoard(3);
+    render(<Board board={board} containerWidth={TEST_CONTAINER} />);
+    const z0 = (
+      document.querySelector(`[data-card-id="${ids[0] ?? ''}"]`) as HTMLElement
+    )?.style.zIndex;
+    const z1 = (
+      document.querySelector(`[data-card-id="${ids[1] ?? ''}"]`) as HTMLElement
+    )?.style.zIndex;
+    const z2 = (
+      document.querySelector(`[data-card-id="${ids[2] ?? ''}"]`) as HTMLElement
+    )?.style.zIndex;
+    expect(Number(z2)).toBeGreaterThan(Number(z1));
+    expect(Number(z1)).toBeGreaterThan(Number(z0));
+  });
+
+  it('threads attaching to a stacked card terminate at the rendered (offset) position', () => {
+    const { board, ids } = makeStackBoard(2);
+    let withThread = board;
+    // Anchor card in a different cell so we can pin one endpoint.
+    const anchor = addCard(withThread, {
+      week: 0,
+      day: 0,
+      color: 'mint',
+      text: 'anchor',
+      newId: () => 'card_anchor',
+      clock: () => 500,
+    });
+    withThread = anchor.board;
+    const thread = addThread(withThread, {
+      fromCardId: 'card_anchor',
+      toCardId: ids[1] ?? '',
+      newId: () => 'thread_stack',
+    });
+    withThread = thread.board;
+
+    render(<Board board={withThread} containerWidth={TEST_CONTAINER} />);
+
+    // Expected endpoint on the stacked card side: cell-centre + the
+    // i=1 offset for stackOffsets(2) → (-7, -5.5).
+    const stackedX =
+      METRICS.railW + 2 * METRICS.cellW + METRICS.cellW / 2 - 7;
+    const stackedY =
+      METRICS.headerH + 1 * METRICS.cellH + METRICS.cellH / 2 - 5.5;
+
+    const path = document.querySelector(
+      `path[data-thread-id="thread_stack"]`,
+    );
+    expect(path).not.toBeNull();
+    const d = path?.getAttribute('d') ?? '';
+    // Path shape: M x1 y1 Q midX (midY + sag) x2 y2 — extract the trailing endpoint.
+    const match = /\s([\d.-]+)\s([\d.-]+)$/.exec(d);
+    expect(match).not.toBeNull();
+    expect(Number(match?.[1])).toBeCloseTo(stackedX, 1);
+    expect(Number(match?.[2])).toBeCloseTo(stackedY, 1);
+  });
+});
+
 describe('<Board /> — fluid sizing (Amendment A + B)', () => {
   it('at containerWidth = 1440 the rendered cork width follows computeBoardMetrics', () => {
     const board = createBoard({ startMonday: '2024-05-27', weeks: 4 });

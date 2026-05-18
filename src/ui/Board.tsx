@@ -2,9 +2,11 @@ import type { CSSProperties, ReactNode } from 'react';
 import { DAYS, type Day } from '../domain/types';
 import type {
   Board as BoardModel,
+  Card as CardModel,
   CardId,
   Week,
 } from '../domain/types';
+import { stackOffsets } from '../domain/stacking';
 import { Card } from './Card';
 import { Thread, ThreadShadowDefs, THREAD_FILTER_ID } from './Thread';
 import {
@@ -100,7 +102,26 @@ export function Board({
   // CLAUDE.md §4 names `cellW/56` for shorthand; design/handoff/Build Spec.md
   // makes the constraint explicit: `min(cellW/56, cellH/38)`.
   const cardSize = Math.min(cellW / 56, cellH / 38);
-  const cardsById = new Map(board.cards.map((c) => [c.id, c]));
+
+  // Resolve each card's render position: cell centre + the deterministic
+  // in-cell offset from stackOffsets(N) at its createdAt-sorted index.
+  const cellGroups = new Map<string, CardModel[]>();
+  for (const c of board.cards) {
+    const key = `${String(c.week)}:${String(c.day)}`;
+    const bucket = cellGroups.get(key) ?? [];
+    bucket.push(c);
+    cellGroups.set(key, bucket);
+  }
+  const positionById = new Map<CardId, { x: number; y: number }>();
+  for (const [, group] of cellGroups) {
+    group.sort((a, b) => a.createdAt - b.createdAt);
+    const offsets = stackOffsets(group.length);
+    group.forEach((c, i) => {
+      const centre = cellCenter(c, { cellW, cellH, railW, headerH });
+      const off = offsets[i] ?? { x: 0, y: 0 };
+      positionById.set(c.id, { x: centre.x + off.x, y: centre.y + off.y });
+    });
+  }
 
   /**
    * v2: there is no wood frame. The cork is the outer board element and
@@ -318,7 +339,8 @@ export function Board({
       {board.cards
         .filter((c) => c.week >= 0 && c.week < weeks)
         .map((card) => {
-          const { x, y } = cellCenter(card, { cellW, cellH, railW, headerH });
+          const pos = positionById.get(card.id);
+          if (!pos) return null;
           return (
             <div
               key={card.id}
@@ -334,10 +356,11 @@ export function Board({
               }
               style={{
                 position: 'absolute',
-                left: x,
-                top: y,
+                left: pos.x,
+                top: pos.y,
                 transform: 'translate(-50%, -50%)',
                 cursor: onCardClick ? 'pointer' : 'default',
+                zIndex: card.z,
               }}
             >
               <Card card={card} size={cardSize} />
@@ -355,11 +378,9 @@ export function Board({
         >
           <ThreadShadowDefs />
           {board.threads.map((thread) => {
-            const a = cardsById.get(thread.fromCardId);
-            const b = cardsById.get(thread.toCardId);
-            if (!a || !b) return null;
-            const pa = cellCenter(a, { cellW, cellH, railW, headerH });
-            const pb = cellCenter(b, { cellW, cellH, railW, headerH });
+            const pa = positionById.get(thread.fromCardId);
+            const pb = positionById.get(thread.toCardId);
+            if (!pa || !pb) return null;
             return (
               <Thread
                 key={thread.id}
@@ -379,11 +400,10 @@ export function Board({
       {popoverForCard !== undefined &&
         popover !== undefined &&
         (() => {
-          const card = cardsById.get(popoverForCard);
-          if (!card) return null;
-          const { x, y } = cellCenter(card, { cellW, cellH, railW, headerH });
-          const topRaw = y + cellH / 2 + POPOVER_GAP;
-          const leftRaw = x - POPOVER_WIDTH / 2;
+          const pos = positionById.get(popoverForCard);
+          if (!pos) return null;
+          const topRaw = pos.y + cellH / 2 + POPOVER_GAP;
+          const leftRaw = pos.x - POPOVER_WIDTH / 2;
           const left = Math.max(
             4,
             Math.min(W - POPOVER_WIDTH - 4, leftRaw),
