@@ -51,6 +51,9 @@ export type AppProps = {
   slug?: string;
   clock?: Clock;
   debounceMs?: number;
+  /** Pin the container width — bypasses the ResizeObserver. Used by tests
+   * where jsdom has no layout, so `clientWidth` would collapse to 0. */
+  containerWidth?: number;
 };
 
 export function App({
@@ -58,6 +61,7 @@ export function App({
   slug = DEMO_SLUG,
   clock = realClock,
   debounceMs,
+  containerWidth: containerWidthOverride,
 }: AppProps = {}) {
   const repository = useMemo<BoardRepository>(
     () => repositoryProp ?? new LocalStorageRepository(),
@@ -73,8 +77,11 @@ export function App({
     commitEdit,
     cancelEdit,
     deleteEditing,
+    moveCardTo,
+    cycleCellStack,
   } = useBoardEditor({ repository, slug, clock, debounceMs });
-  const { ref: stageRef, width: stageWidth } = useContainerWidth();
+  const { ref: stageRef, width: measuredWidth } = useContainerWidth();
+  const stageWidth = containerWidthOverride ?? measuredWidth;
 
   const editingCard =
     editor.kind === 'editing' && board !== null
@@ -144,6 +151,8 @@ export function App({
             containerWidth={stageWidth}
             onCellClick={beginNew}
             onCardClick={beginEdit}
+            onCardDrop={moveCardTo}
+            onCellCycle={cycleCellStack}
             popoverForCard={
               editor.kind === 'editing' ? editor.cardId : undefined
             }

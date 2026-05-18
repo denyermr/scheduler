@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   addCard,
   deleteCard,
+  moveCard,
   updateCard,
 } from '../domain/board';
+import { cycleStack } from '../domain/stacking';
 import type { Clock } from '../domain/clock';
 import type {
   Board,
@@ -45,6 +47,10 @@ export type UseBoardEditorResult = {
   commitEdit: () => void;
   cancelEdit: () => void;
   deleteEditing: () => void;
+  /** Move a card to (week, day). Bumps updatedAt + assigns z. No-op if same cell. */
+  moveCardTo: (cardId: CardId, week: Week, day: Day) => void;
+  /** Rotate the z-order of cards in (week, day). No-op if 0 or 1 cards there. */
+  cycleCellStack: (week: Week, day: Day) => void;
 };
 
 /**
@@ -239,6 +245,30 @@ export function useBoardEditor(
     setEditor({ kind: 'idle' });
   }, [commit, scheduleSave]);
 
+  const moveCardTo = useCallback(
+    (cardId: CardId, week: Week, day: Day) => {
+      const current = boardRef.current;
+      if (current === null) return;
+      const next = moveCard(current, cardId, { week, day }, { clock });
+      if (next === current) return;
+      commit(next);
+      scheduleSave(next);
+    },
+    [clock, commit, scheduleSave],
+  );
+
+  const cycleCellStack = useCallback(
+    (week: Week, day: Day) => {
+      const current = boardRef.current;
+      if (current === null) return;
+      const next = cycleStack(current, week, day, { clock });
+      if (next === current) return;
+      commit(next);
+      scheduleSave(next);
+    },
+    [clock, commit, scheduleSave],
+  );
+
   return {
     board,
     editor,
@@ -249,5 +279,7 @@ export function useBoardEditor(
     commitEdit,
     cancelEdit,
     deleteEditing,
+    moveCardTo,
+    cycleCellStack,
   };
 }
