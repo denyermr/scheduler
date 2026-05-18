@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Clock } from './domain/clock';
 import { Board } from './ui/Board';
 import { EditPopover } from './ui/EditPopover';
+import { ResizeDialog } from './ui/ResizeDialog';
+import { ShareDialog } from './ui/ShareDialog';
+import { Toolbar } from './ui/Toolbar';
 import {
   FONTS,
   PAGE_BG,
@@ -72,6 +75,9 @@ export function App({
     board,
     editor,
     selectedCardId,
+    pendingResize,
+    canUndo,
+    canRedo,
     beginNew,
     beginEdit,
     setEditingText,
@@ -88,7 +94,11 @@ export function App({
     deleteSelected,
     undo,
     redo,
+    requestResize,
+    confirmPendingResize,
+    cancelPendingResize,
   } = editorState;
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     const isTextInputTarget = (target: EventTarget | null): boolean => {
@@ -190,12 +200,24 @@ export function App({
             {slug}
           </span>
         </div>
-        {/* Toolbar lands in Phase 6 — placeholder reserves the row height. */}
         <div
           data-testid="toolbar-placeholder"
-          aria-hidden
-          style={{ width: 1, height: 36 }}
-        />
+          style={{ position: 'relative', minWidth: 320, height: 36 }}
+        >
+          {board && (
+            <Toolbar
+              weeks={board.weeks}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onUndo={undo}
+              onRedo={redo}
+              onShare={() => {
+                setShareOpen(true);
+              }}
+              onRequestResize={requestResize}
+            />
+          )}
+        </div>
       </header>
       <div
         ref={stageRef}
@@ -236,6 +258,24 @@ export function App({
           />
         )}
       </div>
+      {pendingResize && (
+        <ResizeDialog
+          weeks={pendingResize.weeks}
+          cutCount={pendingResize.cutCardIds.length}
+          onConfirm={confirmPendingResize}
+          onCancel={cancelPendingResize}
+        />
+      )}
+      {shareOpen && board && (
+        <ShareDialog
+          url={`scheduleboard.app/b/${slug}`}
+          cardCount={board.cards.filter((c) => c.week < board.weeks).length}
+          threadCount={board.threads.length}
+          onClose={() => {
+            setShareOpen(false);
+          }}
+        />
+      )}
     </main>
   );
 }
