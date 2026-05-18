@@ -16,7 +16,8 @@ test('hero board shows all 7 day headers (Mon..Sun)', async ({ page }) => {
 test('hero board renders the 26 weeks and demo cards', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('[data-testid="week-row"]')).toHaveCount(26);
-  // The hero demo set is 54 cards (47 weekday + 7 weekend additions in spec v2).
-  await expect(page.locator('[data-testid="card-slot"]')).toHaveCount(54);
+  // The hero demo set is 57 cards (47 weekday + 7 weekend + 3 stacked at
+  // (week 4, day 2) added in Phase 4 to showcase workflow 02).
+  await expect(page.locator('[data-testid="card-slot"]')).toHaveCount(57);
   await expect(page.locator('[data-testid="thread-path"]')).toHaveCount(4);
 });

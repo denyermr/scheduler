@@ -61,7 +61,7 @@ describe('LocalStorageRepository — Phase 3 real persistence', () => {
     const repo = new LocalStorageRepository(storage);
     const board = await repo.load('any-new-slug');
     expect(board).not.toBeNull();
-    expect(board?.cards.length).toBe(54);
+    expect(board?.cards.length).toBe(57);
   });
 
   it('save() writes the slug-scoped key sb:board:<slug>', async () => {
@@ -108,7 +108,7 @@ describe('LocalStorageRepository — Phase 3 real persistence', () => {
     const storage = makeFakeStorage();
     const repo = new LocalStorageRepository(storage);
     const board = await repo.load(DEMO_SLUG);
-    expect(board?.cards.length).toBe(54);
+    expect(board?.cards.length).toBe(57);
     expect(board?.threads.length).toBe(4);
   });
 
@@ -117,7 +117,7 @@ describe('LocalStorageRepository — Phase 3 real persistence', () => {
     storage.setItem('sb:board:corrupt', '{not-json');
     const repo = new LocalStorageRepository(storage);
     const board = await repo.load('corrupt');
-    expect(board?.cards.length).toBe(54);
+    expect(board?.cards.length).toBe(57);
   });
 
   it('produces stable card IDs across loads of the demo (deterministic)', () => {
