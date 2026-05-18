@@ -104,9 +104,14 @@ promotion plus a `--production=false` install in the host's build step).
   tolerated by the backend (the slug `INSERT` on a fresh `/b/:slug` GET is an
   `INSERT OR IGNORE`; if two clients race the slug, both get the same empty
   board and converge via LWW).
-- **Word lists**: two plain TS arrays in `src/persistence/slug.ts` —
-  `ADJECTIVES` (~1500) and `NOUNS` (~1500). Reviewable, no external dep, no
-  surprise drift between releases.
+- **Word lists**: two plain TS arrays in `src/persistence/slugWords.ts` —
+  `ADJECTIVES` (~540 shipped) and `NOUNS` (~550 shipped). Reviewable in PR
+  diffs, no external dep, no surprise drift between releases. Pattern is
+  `adj-noun-adj-noun-NNNN`, giving ≈ 9 × 10¹⁴ combinations — two orders of
+  magnitude below the original ~5 × 10¹⁶ aspirational target but still 14+
+  orders of magnitude above the "bot enumeration is realistic" bar.
+  Hand-curating 3000+ categorized words is more cost than benefit; spec
+  floor is `≥ 500 each` and the lists can grow without a spec rewrite.
 - **`DEMO_SLUG = 'oak-thread-942'` scrapped**. `/` now redirects to a freshly
   generated slug on first paint. The existing localStorage entry under
   `sb:board:oak-thread-942` becomes orphaned for any dev who runs `main` on
