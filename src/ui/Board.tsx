@@ -35,10 +35,19 @@ import {
   GRID_HEADER_RULE,
   GRID_LINE,
   PIN_PALETTE,
+  THREAD_DELETE_FLASH_MS,
+  THREAD_DRAWING_DASH,
+  THREAD_HANDLE_FILL,
+  THREAD_HANDLE_RING,
+  THREAD_OPACITY,
+  THREAD_STROKE,
+  THREAD_WIDTH,
   WEEKEND_DAY_INDICES,
   cellAt,
   cellCenter,
   computeBoardMetrics,
+  threadPathD,
+  threadSag,
 } from './tokens';
 
 export type BoardProps = {
@@ -57,6 +66,10 @@ export type BoardProps = {
   onCardDrop?: (cardId: CardId, week: Week, day: Day) => void;
   /** Fires when the user Cmd/Ctrl-clicks a stacked cell — cycles z-order. */
   onCellCycle?: (week: Week, day: Day) => void;
+  /** Fires after a successful drag from one card's thread handle to another card. */
+  onThreadCreate?: (fromCardId: CardId, toCardId: CardId) => void;
+  /** Fires when an existing thread is clicked (after the 100 ms red flash). */
+  onThreadDelete?: (threadId: string) => void;
   /** Optional overlay (e.g. EditPopover) positioned below the given card. */
   popoverForCard?: CardId;
   popover?: ReactNode;
@@ -79,7 +92,22 @@ type DragState =
       deltaY: number;
       targetCell: { week: number; day: Day } | null;
     }
-  | { kind: 'snapping'; cardId: CardId };
+  | { kind: 'snapping'; cardId: CardId }
+  | {
+      kind: 'thread-pressing';
+      fromCardId: CardId;
+      sourceX: number;
+      sourceY: number;
+    }
+  | {
+      kind: 'thread-drawing';
+      fromCardId: CardId;
+      sourceX: number;
+      sourceY: number;
+      pointerX: number;
+      pointerY: number;
+      targetCardId: CardId | null;
+    };
 
 const DAYS_PER_WEEK = 7;
 const WEEKEND_SET = new Set<number>(WEEKEND_DAY_INDICES);
@@ -125,6 +153,8 @@ export function Board({
   onCardClick,
   onCardDrop,
   onCellCycle,
+  onThreadCreate,
+  onThreadDelete,
   popoverForCard,
   popover,
 }: BoardProps): JSX.Element {
@@ -146,6 +176,33 @@ export function Board({
   // After a drag completes, the synthetic click on the slot would re-open the
   // popover. We mark the next click as a no-op to suppress it.
   const suppressNextClick = useRef(false);
+  // Which card the pointer is currently over — drives thread-handle visibility.
+  const [hoveredCardId, setHoveredCardId] = useState<CardId | null>(null);
+  // The thread currently flashing red after a click, before it's deleted.
+  const [flashingThreadId, setFlashingThreadId] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return (): void => {
+      if (flashTimer.current !== null) {
+        clearTimeout(flashTimer.current);
+        flashTimer.current = null;
+      }
+    };
+  }, []);
+
+  const onThreadClick = useCallback(
+    (threadId: string): void => {
+      if (flashTimer.current !== null) return; // already flashing
+      setFlashingThreadId(threadId);
+      flashTimer.current = setTimeout(() => {
+        flashTimer.current = null;
+        setFlashingThreadId(null);
+        if (onThreadDelete) onThreadDelete(threadId);
+      }, THREAD_DELETE_FLASH_MS);
+    },
+    [onThreadDelete],
+  );
 
   const clearLiftTimer = useCallback(() => {
     if (liftTimer.current !== null) {
@@ -194,7 +251,7 @@ export function Board({
         );
       }, DRAG_LIFT_MS);
     },
-    [clearLiftTimer],
+    [clearLiftTimer, setDrag],
   );
 
   useEffect(() => {
@@ -273,6 +330,102 @@ export function Board({
       }
     };
   }, [clearLiftTimer]);
+
+  // Thread-drag arm: listens while the user is drawing from a handle.
+  // Lives as a separate effect so its event listeners attach/detach only
+  // while a thread drag is active and don't pollute the card-drag arm.
+  const cardSizeRef = useRef(0);
+  const positionByIdRef = useRef<Map<CardId, { x: number; y: number }>>(
+    new Map(),
+  );
+
+  useEffect(() => {
+    if (drag.kind !== 'thread-pressing' && drag.kind !== 'thread-drawing') {
+      return undefined;
+    }
+
+    const cardAtSurface = (x: number, y: number): CardId | null => {
+      const cardW = 78 * cardSizeRef.current;
+      const cardH = 30 * cardSizeRef.current;
+      const halfW = cardW / 2;
+      const halfH = cardH / 2;
+      // Walk cards in descending z so the topmost card wins.
+      let bestId: CardId | null = null;
+      let bestZ = -Infinity;
+      for (const c of board.cards) {
+        if (c.week < 0 || c.week >= weeks) continue;
+        const p = positionByIdRef.current.get(c.id);
+        if (!p) continue;
+        if (
+          x >= p.x - halfW &&
+          x <= p.x + halfW &&
+          y >= p.y - halfH &&
+          y <= p.y + halfH
+        ) {
+          if (c.z > bestZ) {
+            bestZ = c.z;
+            bestId = c.id;
+          }
+        }
+      }
+      return bestId;
+    };
+
+    const handleMove = (e: PointerEvent): void => {
+      const cur = dragRef.current;
+      if (cur.kind !== 'thread-pressing' && cur.kind !== 'thread-drawing') {
+        return;
+      }
+      const xy = pointerToBoardXY(e.clientX, e.clientY);
+      if (!xy) return;
+      const tgt = cardAtSurface(xy.x, xy.y);
+      const targetCardId = tgt && tgt !== cur.fromCardId ? tgt : null;
+      setDrag({
+        kind: 'thread-drawing',
+        fromCardId: cur.fromCardId,
+        sourceX: cur.sourceX,
+        sourceY: cur.sourceY,
+        pointerX: xy.x,
+        pointerY: xy.y,
+        targetCardId,
+      });
+    };
+
+    const handleUp = (): void => {
+      const cur = dragRef.current;
+      if (cur.kind === 'thread-pressing') {
+        // Pointer-down on the handle with no movement, then up. No-op.
+        setDrag({ kind: 'idle' });
+        return;
+      }
+      if (cur.kind !== 'thread-drawing') return;
+      if (cur.targetCardId && onThreadCreate) {
+        onThreadCreate(cur.fromCardId, cur.targetCardId);
+      }
+      setDrag({ kind: 'idle' });
+    };
+
+    const handleCancel = (): void => {
+      setDrag({ kind: 'idle' });
+    };
+
+    const handleKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        setDrag({ kind: 'idle' });
+      }
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleCancel);
+    window.addEventListener('keydown', handleKey);
+    return (): void => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleCancel);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [drag.kind, pointerToBoardXY, onThreadCreate, board.cards, weeks]);
   // ─── End drag state machine ────────────────────────────────────────────
 
   const labels = weekLabels ?? computeWeekLabels(board.startMonday, weeks + 4);
@@ -313,6 +466,14 @@ export function Board({
       });
     }
   }
+
+  // Sync the fresh cardSize + positionById into refs so the thread-drag arm's
+  // window-listener (registered once per drag arm) can read them without a
+  // stale-closure problem.
+  useEffect(() => {
+    cardSizeRef.current = cardSize;
+    positionByIdRef.current = positionById;
+  });
 
   /**
    * v2: there is no wood frame. The cork is the outer board element and
@@ -592,6 +753,11 @@ export function Board({
             }
           };
 
+          const showHandle =
+            onThreadCreate !== undefined && hoveredCardId === card.id;
+          const isThreadTarget =
+            drag.kind === 'thread-drawing' && drag.targetCardId === card.id;
+
           return (
             <div
               key={card.id}
@@ -600,10 +766,27 @@ export function Board({
               data-dragging={
                 liftedVisual ? 'lifted' : isSnapping ? 'snapping' : null
               }
+              data-thread-target={isThreadTarget ? 'true' : undefined}
               onPointerDown={
                 onCardDrop
                   ? (e): void => {
                       onCardPointerDown(e, card.id);
+                    }
+                  : undefined
+              }
+              onPointerEnter={
+                onThreadCreate
+                  ? (): void => {
+                      setHoveredCardId(card.id);
+                    }
+                  : undefined
+              }
+              onPointerLeave={
+                onThreadCreate
+                  ? (): void => {
+                      setHoveredCardId((cur) =>
+                        cur === card.id ? null : cur,
+                      );
                     }
                   : undefined
               }
@@ -622,12 +805,63 @@ export function Board({
                       ? 'grabbing'
                       : 'pointer'
                     : 'default',
-                zIndex: liftedVisual ? 1000 : card.z,
-                boxShadow: liftedVisual ? DRAG_LIFT_SHADOW : undefined,
+                zIndex: liftedVisual
+                  ? 1000
+                  : showHandle || isThreadTarget
+                    ? 500
+                    : card.z,
+                boxShadow: liftedVisual
+                  ? DRAG_LIFT_SHADOW
+                  : isThreadTarget
+                    ? `0 0 0 2px ${THREAD_STROKE}, 0 0 14px rgba(156,90,46,.45)`
+                    : undefined,
                 touchAction: onCardDrop ? 'none' : undefined,
               }}
             >
               <Card card={card} size={cardSize} />
+              {showHandle && (
+                <button
+                  type="button"
+                  data-testid="thread-handle"
+                  data-card-id={card.id}
+                  aria-label="Drag to draw a thread to another card"
+                  onPointerDown={(e): void => {
+                    if (e.button !== 0) return;
+                    // Don't let the slot's onPointerDown also fire — that
+                    // would simultaneously open the card-drag arm.
+                    e.stopPropagation();
+                    e.preventDefault();
+                    const src = positionById.get(card.id);
+                    if (!src) return;
+                    setDrag({
+                      kind: 'thread-pressing',
+                      fromCardId: card.id,
+                      sourceX: src.x,
+                      sourceY: src.y,
+                    });
+                  }}
+                  onClick={(e): void => {
+                    // The handle is only meaningful as a drag origin; a tap
+                    // on it shouldn't open the card's edit popover.
+                    e.stopPropagation();
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: -5,
+                    right: -5,
+                    width: 10,
+                    height: 10,
+                    padding: 0,
+                    borderRadius: '50%',
+                    background: THREAD_HANDLE_FILL,
+                    border: `2px solid ${THREAD_HANDLE_RING}`,
+                    boxShadow: '0 1px 2px rgba(0,0,0,.35)',
+                    cursor: 'crosshair',
+                    touchAction: 'none',
+                    zIndex: 2,
+                  }}
+                />
+              )}
             </div>
           );
         })}
@@ -654,9 +888,44 @@ export function Board({
                 y2={pb.y}
                 threadId={thread.id}
                 filterId={THREAD_FILTER_ID}
+                flashing={flashingThreadId === thread.id}
+                onClick={
+                  onThreadDelete
+                    ? (): void => {
+                        onThreadClick(thread.id);
+                      }
+                    : undefined
+                }
               />
             );
           })}
+          {drag.kind === 'thread-drawing' && (() => {
+            const sag = threadSag(
+              Math.hypot(
+                drag.pointerX - drag.sourceX,
+                drag.pointerY - drag.sourceY,
+              ),
+            );
+            const d = threadPathD(
+              drag.sourceX,
+              drag.sourceY,
+              drag.pointerX,
+              drag.pointerY,
+              sag,
+            );
+            return (
+              <path
+                data-testid="thread-drawing-path"
+                d={d}
+                stroke={THREAD_STROKE}
+                strokeWidth={THREAD_WIDTH}
+                strokeOpacity={THREAD_OPACITY}
+                strokeLinecap="round"
+                strokeDasharray={THREAD_DRAWING_DASH}
+                fill="none"
+              />
+            );
+          })()}
         </svg>
       )}
 
