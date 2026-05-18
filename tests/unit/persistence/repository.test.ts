@@ -61,7 +61,7 @@ describe('LocalStorageRepository — Phase 3 real persistence', () => {
     const repo = new LocalStorageRepository(storage);
     const board = await repo.load('any-new-slug');
     expect(board).not.toBeNull();
-    expect(board?.cards.length).toBe(54);
+    expect(board?.cards.length).toBe(57);
   });
 
   it('save() writes the slug-scoped key sb:board:<slug>', async () => {
@@ -108,7 +108,7 @@ describe('LocalStorageRepository — Phase 3 real persistence', () => {
     const storage = makeFakeStorage();
     const repo = new LocalStorageRepository(storage);
     const board = await repo.load(DEMO_SLUG);
-    expect(board?.cards.length).toBe(54);
+    expect(board?.cards.length).toBe(57);
     expect(board?.threads.length).toBe(4);
   });
 
@@ -117,7 +117,7 @@ describe('LocalStorageRepository — Phase 3 real persistence', () => {
     storage.setItem('sb:board:corrupt', '{not-json');
     const repo = new LocalStorageRepository(storage);
     const board = await repo.load('corrupt');
-    expect(board?.cards.length).toBe(54);
+    expect(board?.cards.length).toBe(57);
   });
 
   it('produces stable card IDs across loads of the demo (deterministic)', () => {
@@ -139,5 +139,110 @@ describe('LocalStorageRepository — Phase 3 real persistence', () => {
       expect(t.fromCardId).toMatch(/^card_/);
       expect(t.toCardId).toMatch(/^card_/);
     }
+  });
+
+  it('default-fills missing Card.z on legacy Phase-3 loads (one card / cell)', async () => {
+    const storage = makeFakeStorage();
+    const legacy = {
+      startMonday: '2024-05-27',
+      weeks: 4,
+      cards: [
+        {
+          id: 'card_legacy_1',
+          week: 0,
+          day: 0,
+          color: 'peach',
+          text: 'hi',
+          rotation: 0,
+          pin: '#d6463a',
+          createdAt: 100,
+          updatedAt: 100,
+        },
+      ],
+      threads: [],
+    };
+    storage.setItem('sb:board:legacy', JSON.stringify(legacy));
+    const repo = new LocalStorageRepository(storage);
+    const board = await repo.load('legacy');
+    expect(board?.cards[0]?.z).toBe(0);
+  });
+
+  it('default-fills z by createdAt order when a legacy cell has multiple cards', async () => {
+    const storage = makeFakeStorage();
+    const legacy = {
+      startMonday: '2024-05-27',
+      weeks: 4,
+      cards: [
+        // Same (week, day) — intentionally out of createdAt order in the array.
+        {
+          id: 'card_legacy_b',
+          week: 0,
+          day: 0,
+          color: 'peach',
+          text: 'middle',
+          rotation: 0,
+          pin: '#d6463a',
+          createdAt: 200,
+          updatedAt: 200,
+        },
+        {
+          id: 'card_legacy_a',
+          week: 0,
+          day: 0,
+          color: 'sky',
+          text: 'oldest',
+          rotation: 0,
+          pin: '#3a7ed6',
+          createdAt: 100,
+          updatedAt: 100,
+        },
+        {
+          id: 'card_legacy_c',
+          week: 0,
+          day: 0,
+          color: 'mint',
+          text: 'newest',
+          rotation: 0,
+          pin: '#3aa15a',
+          createdAt: 300,
+          updatedAt: 300,
+        },
+      ],
+      threads: [],
+    };
+    storage.setItem('sb:board:legacy-stack', JSON.stringify(legacy));
+    const repo = new LocalStorageRepository(storage);
+    const board = await repo.load('legacy-stack');
+    const byId = Object.fromEntries((board?.cards ?? []).map((c) => [c.id, c]));
+    expect(byId['card_legacy_a']?.z).toBe(0);
+    expect(byId['card_legacy_b']?.z).toBe(1);
+    expect(byId['card_legacy_c']?.z).toBe(2);
+  });
+
+  it('preserves z when already present (Phase-4+ saves round-trip unchanged)', async () => {
+    const storage = makeFakeStorage();
+    const native = {
+      startMonday: '2024-05-27',
+      weeks: 4,
+      cards: [
+        {
+          id: 'card_native_1',
+          week: 0,
+          day: 0,
+          color: 'peach',
+          text: 'x',
+          rotation: 0,
+          pin: '#d6463a',
+          createdAt: 100,
+          updatedAt: 100,
+          z: 7,
+        },
+      ],
+      threads: [],
+    };
+    storage.setItem('sb:board:native', JSON.stringify(native));
+    const repo = new LocalStorageRepository(storage);
+    const board = await repo.load('native');
+    expect(board?.cards[0]?.z).toBe(7);
   });
 });

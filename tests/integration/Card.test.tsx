@@ -12,6 +12,9 @@ const baseCard: CardModel = {
   text: 'Dress + light',
   rotation: -1.5,
   pin: PIN_PALETTE.red,
+  createdAt: 0,
+  updatedAt: 0,
+  z: 0,
 };
 
 describe('<Card />', () => {

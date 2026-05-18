@@ -108,6 +108,22 @@ export const CARD_BASE = {
 
 export const PIN_SIZE = 5;
 
+/**
+ * Drag timing constants — Phase 4 workflow 02.
+ *
+ * - `DRAG_LIFT_MS`: a card lifts after this many ms of pointer-hold (rotation
+ *   resets, slight scale-up, larger shadow). Shorter than the spec's 80ms
+ *   would catch double-clicks; longer would feel sluggish.
+ * - `DRAG_SNAP_MS`: ease-out duration when the card lands in its target cell.
+ *
+ * Both values are pinned by integration tests with fake timers.
+ */
+export const DRAG_LIFT_MS = 80;
+export const DRAG_SNAP_MS = 120;
+export const DRAG_LIFT_SCALE = 1.05;
+export const DRAG_LIFT_SHADOW =
+  '0 8px 18px rgba(0,0,0,.30), 0 2px 4px rgba(0,0,0,.20)';
+
 const DAY_LABELS = [
   'MON',
   'TUES',

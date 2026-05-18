@@ -59,6 +59,11 @@ const DEMO_CARDS: readonly DemoCard[] = [
   { w: 13, d: 6, c: 'mint', t: 'Holiday' },
   { w: 17, d: 6, c: 'yellow', t: 'Render Q' },
   { w: 22, d: 5, c: 'mint', t: 'OFF' },
+  // Stack demo (Phase 4) — three cards share (week 4, day 2) so workflow 02
+  // and the §4 stacking offset are visible on first load.
+  { w: 4, d: 2, c: 'yellow', t: 'Notes' },
+  { w: 4, d: 2, c: 'sky', t: 'Camera' },
+  { w: 4, d: 2, c: 'coral', t: 'BLOCK' },
 ];
 
 const DEMO_THREADS: readonly [number, number][] = [
