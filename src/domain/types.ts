@@ -38,8 +38,16 @@ export type Card = {
   readonly pin: Pin;
   /** Unix epoch ms set on create, never modified. */
   readonly createdAt: number;
-  /** Unix epoch ms bumped on every mutation (text, color, week, day). */
+  /** Unix epoch ms bumped on every mutation (text, color, week, day, z-cycle). */
   readonly updatedAt: number;
+  /**
+   * Stack order within the card's (week, day) cell. Higher = on top.
+   * Assigned by `addCard` / `moveCard` as `max(z in target cell) + 1`,
+   * or 0 if the target cell is empty. Cycled in-place by `cycleStack`.
+   * The render-time offset within the cell is derived from `z` ordering
+   * via `stackOffsets(N)` — see CLAUDE.md §4.
+   */
+  readonly z: number;
 };
 
 export type Thread = {

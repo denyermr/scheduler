@@ -44,6 +44,23 @@ function findCardIndex(board: Board, id: CardId): number {
   return board.cards.findIndex((c) => c.id === id);
 }
 
+function nextZForCell(
+  cards: readonly Card[],
+  week: number,
+  day: Day,
+  excludeId?: CardId,
+): number {
+  let max = -1;
+  let count = 0;
+  for (const c of cards) {
+    if (excludeId !== undefined && c.id === excludeId) continue;
+    if (c.week !== week || c.day !== day) continue;
+    count += 1;
+    if (c.z > max) max = c.z;
+  }
+  return count === 0 ? 0 : max + 1;
+}
+
 function replaceAt<T>(arr: readonly T[], index: number, value: T): T[] {
   const next = arr.slice();
   next[index] = value;
@@ -101,6 +118,7 @@ export function addCard(
     pin: randomPin(rng),
     createdAt: now,
     updatedAt: now,
+    z: nextZForCell(board.cards, input.week, input.day),
   };
   return {
     board: { ...board, cards: [...board.cards, card] },
@@ -162,6 +180,7 @@ export function moveCard(
     week: to.week,
     day: to.day,
     updatedAt: clock(),
+    z: nextZForCell(board.cards, to.week, to.day, existing.id),
   };
   return { ...board, cards: replaceAt(board.cards, idx, next) };
 }
