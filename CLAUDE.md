@@ -8,6 +8,8 @@ This file is read at the start of every Claude Code session. It is the source of
 
 A digital recreation of a physical schedule board (animation-studio reference). Grid of days × weeks; colored cards pinned to cells; threads connecting related cards. URL is the identity — anyone with the link can edit. No accounts, no save button, no permissions.
 
+Boards are link-shared by default. For boards that hold anything sensitive, the owner can set an optional per-board **passphrase lock** that encrypts contents client-side; visiting the URL then prompts for the passphrase before the board renders. The "in the room" model is preserved either way: anyone who has the link (and the passphrase, if set) is in the room. There are still no accounts, no email recovery, no roles — lose the passphrase and the board is lost.
+
 **North star: tactile, not slick.** Cork surface, ±2° card rotation, drop-shadows, pin heads, string-with-sag threads. The board itself floats on a calm off-white page rather than sitting inside a heavy wood frame. Resist any drift toward calendar-app or productivity-SaaS conventions.
 
 The full design spec lives in `design/` (HTML + JSX artboards). Treat it as authoritative for visual decisions. When the markdown in `design/handoff/` and the visual HTML disagree, **the markdown wins for behavior, the visual wins for look** — this convention comes from the handoff package itself.
@@ -177,8 +179,8 @@ For N > 1 cards sharing a (week, day) cell, sorted by `createdAt` ascending and 
 
 These are non-negotiable. Tests should pin them.
 
-1. **URL = identity.** `/b/<slug>`. Unknown slug → create empty board at that slug, no error.
-2. **Anyone with the link can edit.** No auth, no roles, no view-only mode.
+1. **URL = identity.** `/b/<slug>`. Unknown slug → create empty board at that slug, no error. Slugs use enough entropy that scanning / guessing is not a realistic attack — see §9 "Slug generation".
+2. **Anyone with the link can edit** — _and the passphrase, if one has been set._ No auth, no roles, no view-only mode. By default a board has no passphrase; the owner may optionally set one (Phase 7.5) which client-side-encrypts the board. When a board is locked, the URL alone is no longer enough — the visitor must also know the passphrase to decrypt it. The "in the room" semantics are preserved: anyone who has both keys is in the room. There is no recovery flow.
 3. **No save button.** Edits debounce 250ms then persist.
 4. **Concurrent edits merge** last-writer-wins, per card and per thread. Sync mechanism is a 10-second poll (§9).
 5. **Marker font auto-applies** via the all-caps regex; users opt out by typing lowercase.
@@ -187,6 +189,7 @@ These are non-negotiable. Tests should pin them.
 8. **Shrinking the week range never deletes cards.** Off-board cards are preserved and restored on regrow. A confirmation dialog appears if shrink would cut off any cards.
 9. **Deleting a card removes its threads.** No orphaned threads, ever.
 10. **Thread endpoints are stable card IDs**, not array indices.
+11. **Locked boards never round-trip plaintext through the server.** When a board is passphrase-locked, the only thing the server stores or returns is `{ ciphertext, iv, kdfSalt, kdfIters }`. Plaintext exists only in the browser memory of a session that has decrypted it. Loss of the passphrase = loss of the board; this is the price of the no-accounts model.
 
 ---
 
@@ -268,8 +271,9 @@ For full storyboards, read `design/workflows.jsx`. Summary:
 
 Remaining open decisions for the named phase boundary.
 
-- **Backend choice** (Phase 7 boundary). Options: Cloudflare Workers + Durable Objects, Supabase, Node + SQLite + minimal HTTP. Decision documented in `reviews/phase-7-backend-decision.md`. **Sync mechanism is locked: 10-second poll on the client for remote changes** — backend choice does not change that.
-- **Slug generation** (Phase 7). Two random words + 3-digit suffix per the design (e.g. `oak-thread-942`). Word lists TBD.
+- **Backend choice** (Phase 7 boundary). Options: Cloudflare Workers + Durable Objects, Supabase, Node + SQLite + minimal HTTP. Decision documented in `reviews/phase-7-backend-decision.md`. **Sync mechanism is locked: 10-second poll on the client for remote changes** — backend choice does not change that. Whichever backend is chosen must be able to store an opaque `{ ciphertext, iv, kdfSalt, kdfIters }` blob in place of the plaintext board for Phase 7.5's lockable-board work — i.e. its persistence schema must not assume the board is structured JSON it can index by `cardId` server-side.
+- **Slug generation** (Phase 7). **Four random words + 4-digit suffix** (e.g. `oak-thread-helmet-tractor-7421`). Word list committed inline in `src/persistence/slug.ts` (~1500 adjectives + ~1500 nouns; review-able plain TS arrays, no external dep). With ≥ 1500-word lists this is `1500⁴ × 10⁴ ≈ 5 × 10¹⁶` combinations — bots and scanners cannot enumerate the space. Collisions are tolerated by the backend (slug uniqueness is not enforced on the client).
+- **Per-board passphrase lock** (Phase 7.5). Optional, opt-in per board. PBKDF2-SHA-256 with `kdfIters ≥ 250_000` derives a 256-bit key from `passphrase + kdfSalt` (16 random bytes per board). Content encrypted with AES-GCM-256 and a per-write random IV. Server stores only the ciphertext envelope. Lost passphrase = lost board; this is by design (no accounts, no recovery email).
 - **Domain / hosting** (Phase 8 / launch).
 
 ---
@@ -286,3 +290,5 @@ Material spec changes after a phase has shipped. Keep terse.
 | 2026-05-16 | 4 | Card type to gain `z: number` (persisted, monotonically increasing per board) for in-cell stack ordering. `offset: {x, y}` is **derived at render time** from cell occupancy via the §4 formula — not stored on `Card`. Cmd/Ctrl-click cycles stack z-order. | Stacking visual was underspecified; design drop pinned the formula. Storing the offset would duplicate state that is a pure function of (week, day, createdAt-sorted cards). |
 | 2026-05-16 | 6 | Keyboard shortcuts added: arrow keys nudge selected card by one cell; Backspace deletes selected card (when no input focused). | Locked from design drop §9. |
 | 2026-05-16 | 7 | Sync mechanism locked to 10-second poll (was TBD between polling/WS/SSE). Backend choice remains open. | Design drop concluded a poll suffices for v1's LWW model — simpler and avoids WS infra. |
+| 2026-05-18 | 7 | Slug widened from `word-word-NNN` (2 + 3-digit, ~2 × 10⁹ combos) to `word-word-word-word-NNNN` (4 + 4-digit, ~5 × 10¹⁶ combos). Invariant 1 footnote about slug entropy added. | "Anyone with the link can edit" only holds if the link can't be guessed. The original `oak-thread-942` shape was scannable; bumping to four words + four digits makes brute discovery infeasible for free. |
+| 2026-05-18 | 7.5 (new) | Introduced **optional per-board passphrase lock** (PBKDF2 + AES-GCM, client-side encryption). New invariant 11: locked boards never round-trip plaintext. New section in BUILD_PLAN.md. §1 product paragraph updated; §5 invariant 2 amended with the passphrase footnote. | Users want to put company-scale info on boards without giving up the no-accounts model. Optional encryption is the in-between — casual boards stay frictionless, sensitive ones get a wall, identity-free. |

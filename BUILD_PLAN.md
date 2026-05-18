@@ -441,38 +441,98 @@ Constraints:
 **Scope**
 - `/` → home: redirects to a fresh slug.
 - `/b/<slug>` routing. Unknown slug → empty board created at that slug.
-- Slugs: two random words + 3-digit suffix (e.g. `oak-thread-942`).
+- **Slugs: four random words + 4-digit suffix** (e.g. `oak-thread-helmet-tractor-7421`). Word list lives inline in `src/persistence/slug.ts` (~1500 adjectives + ~1500 nouns as plain TS arrays, no external dep). Combined entropy `1500⁴ × 10⁴ ≈ 5 × 10¹⁶` combinations — bots cannot enumerate. Collisions are tolerated by the backend (slug uniqueness is not enforced on the client; the unit test asserts shape, not global uniqueness).
 - `RemoteRepository` implements `BoardRepository`.
 - Debounced writes (250ms) per mutating action, batched per affected entity (card or thread).
 - `RemoteRepository` polls `GET /b/<slug>` every 10 seconds; the delta is merged into local state with LWW per card and per thread (invariant 4).
+- Remote-merge commits MUST NOT push onto the local undo stack (otherwise undo would re-apply / undo another user's edit). Add a third commit path in `useBoardEditor` alongside the existing `commit` + implicit `pushUndo`: `commitFromRemote(next)` that skips the snapshot push.
 - Share dialog shows the real URL and live `lastEdited` / `cardCount` / `threadCount` summary.
 - Optimistic UI: local mutations show immediately; server confirmation does not re-render.
+- Backend persistence schema stores the board payload as an opaque blob (or fields that include a `ciphertext` envelope) so Phase 7.5 can slot in client-side encryption without a schema migration. Concretely: don't model `cards` / `threads` as server-side tables you index into — store the whole board JSON per slug, server-opaque.
 
 **Out of scope.** Conflict warnings, presence indicators, cursors, comments. WebSockets / SSE — not in v1.
 
 **TDD plan**
-1. Unit: slug generator returns `word-word-NNN` pattern; collisions tolerated by the backend (slugs are not enforced unique on the client).
+1. Unit: slug generator returns `/^[a-z]+-[a-z]+-[a-z]+-[a-z]+-\d{4}$/`. ~500 samples; assert shape, not uniqueness.
 2. Integration: `/b/unknown-slug` creates a fresh empty board.
 3. Integration: any mutation is debounced 250ms then `PATCH`-ed.
 4. Unit: LWW merge — given local card with `updatedAt = T1` and incoming card with `updatedAt = T2`, the one with higher `updatedAt` wins, applied per-field.
 5. Integration: polling triggers every 10 seconds; the polling clock is injectable in tests.
 6. Integration: a poll response carrying a deleted card removes it locally; any thread referencing it is removed too.
 7. Integration: a poll response arriving while I'm editing a card does not steal focus from my input.
-8. E2E (two browser contexts): tab A adds a card, tab B sees it within 12 seconds (one poll cycle + slack).
-9. E2E (two contexts): both tabs edit the same card's color; the later write wins.
-10. E2E (two contexts): tab A deletes a card; tab B's thread referencing it disappears on the next poll.
+8. Integration: a remote-merge commit does NOT push onto the local undo stack — pin separately for "incoming card change" and "incoming card delete".
+9. E2E (two browser contexts): tab A adds a card, tab B sees it within 12 seconds (one poll cycle + slack).
+10. E2E (two contexts): both tabs edit the same card's color; the later write wins.
+11. E2E (two contexts): tab A deletes a card; tab B's thread referencing it disappears on the next poll.
 
 **Test inventory**
 | Level | Count | What |
 |---|---|---|
-| Unit | ~6 | Slug, LWW merge |
-| Integration | ~10 | Routing, repository, debounce, polling |
+| Unit | ~6 | Slug shape, LWW merge |
+| Integration | ~11 | Routing, repository, debounce, polling, remote-merge does NOT push undo |
 | E2E | 3 | Multi-tab scenarios |
 
 **Quality gates**
 - Two-tab convergence verified by Playwright (cross-context, with poll-cycle slack).
 - Network failure: writes queue and retry; no data loss on a 30s offline window.
-- Backend exposes only the operations needed: `GET /b/:slug`, `PATCH /b/:slug/cards/:id`, `PATCH /b/:slug/threads/:id`, `DELETE` for each, plus a board-level `PATCH` for `weeks`.
+- Backend stores the full board JSON per slug as an opaque payload (or a Phase 7.5–ready envelope). No server-side indexing of `cards` / `threads` — the server is dumb storage.
+- Slug entropy bumped to four words + four digits (see Scope); shape-test pinned.
+
+---
+
+## Phase 7.5 — Lockable boards (optional passphrase encryption)
+
+**Goal.** An owner can opt-in to a per-board passphrase. While locked, board contents are encrypted client-side; the server stores only an opaque ciphertext envelope. The default model from Phase 7 ("anyone with the link can edit") is preserved for un-locked boards; locked boards just demand both the link and the passphrase.
+
+**Important.** This phase only starts once Phase 7 has been dogfooded for at least a week. The motivation for the lock is real-world feedback (e.g. wanting to put company info on a board); if dogfooding reveals it isn't needed, this phase is deferred indefinitely. The Phase 7 scope already prepares the backend to slot this in without a schema migration.
+
+**Scope**
+- New toolbar control: `Lock` (text only — emoji ban). On click for an unlocked board: a modal asks for a passphrase + confirmation + a "There is no recovery. If you lose this, the board is lost." acknowledgement. Min 8 chars. On confirm: encrypts the current board and the next persistence write goes out as ciphertext.
+- For a locked board, `Lock` becomes `Locked · Unlock` — clicking prompts for the current passphrase to confirm and exits the locked state. A separate `Change passphrase` action re-encrypts under a new key.
+- Visiting `/b/<slug>` for a locked board renders an inline "This board is locked. Enter passphrase to view." panel with a single password input. Wrong → re-prompt with an error count, no lockout. Right → decrypt in memory and render normally.
+- Crypto: `PBKDF2-SHA-256` with `kdfIters ≥ 250_000`, salt is 16 random bytes generated on the first lock and persisted alongside the ciphertext. AES-GCM-256 with a fresh random IV per write. WebCrypto only — no external lib.
+- Persistence schema (locked variant): `{ locked: true, ciphertext: string (base64), iv: string (base64), kdfSalt: string (base64), kdfIters: number, updatedAt: number }`. The board-level `updatedAt` survives in plaintext so the Share dialog's "Last edited" line can still update; nothing else does.
+- Local cache (localStorage for the demo fallback path) mirrors the server shape — never persists plaintext to disk.
+- Share dialog: when locked, the Copy button copies just the URL; a separate "Copy with passphrase hint" line appears showing `<URL>\n\nPassphrase: [shown to owner only — they're expected to paste it out-of-band]`. The visitor-side experience requires the passphrase via the unlock panel, regardless of how it was shared.
+- Polling: a poll cycle for a locked board returns the ciphertext envelope. The client decrypts with the in-memory key; if decryption fails (e.g. the owner changed the passphrase from another tab), prompts for re-entry rather than crashing.
+- Concurrent locks: if two owners race to lock the same board, last-write-wins on the envelope. Both must re-enter on their next decrypt. This is acceptable behaviour for v1.
+
+**Out of scope.**
+- Per-card encryption.
+- Per-user passphrases on the same board (would break "in the room" semantics).
+- Passphrase recovery / reset.
+- Audit log of access attempts.
+- Brute-force rate limiting at the server (PBKDF2 cost is the rate limit).
+- Lockable boards interacting with the 10s remote-merge in any way other than "decrypt → merge → re-encrypt → write." If the merge resolution itself becomes too expensive under the encryption layer, the answer is "Phase 7.5 took a perf hit" not "change the merge model".
+
+**TDD plan**
+1. Unit (`src/crypto/passphrase.ts`): PBKDF2 derivation produces a stable 256-bit key for `(passphrase, salt)`; different salts produce different keys; iters parameter is honored.
+2. Unit: `encryptBoard(board, key)` → `{ ciphertext, iv }`; `decryptBoard(envelope, key)` round-trips. Tampered ciphertext fails AES-GCM verification (test the auth-tag path).
+3. Unit: `decryptBoard` with the wrong key throws (not silent corruption).
+4. Integration: clicking Lock → modal → confirm → next save goes out with `locked: true` and no plaintext card text in the network payload.
+5. Integration: visiting a locked board renders the unlock panel and NOT the board surface.
+6. Integration: wrong passphrase increments an error count without revealing whether the board exists.
+7. Integration: right passphrase decrypts and renders the same board the owner saw.
+8. Integration: Unlock from toolbar prompts for current passphrase; on success, the next save is plaintext.
+9. Integration: a poll cycle that returns ciphertext is decrypted client-side; LWW merge runs on plaintext (assert merge outcomes are identical to the unencrypted equivalent).
+10. Integration: typing a swatch / text change while the board is locked encrypts before `scheduleSave` fires (no plaintext leaks via the debounce window).
+11. E2E: workflow — open fresh slug → add 3 cards → Lock with passphrase → reload → unlock panel → wrong passphrase rejected → right passphrase → cards visible.
+12. E2E: workflow — owner locks; visitor opens same URL in another context, must enter passphrase; once entered, cross-tab sync still works under encryption.
+13. Smoke: a packet capture of the network layer for a locked board contains no card text strings (`expect(JSON.stringify(payload)).not.toContain('whatever the card said')`).
+
+**Test inventory**
+| Level | Count | What |
+|---|---|---|
+| Unit | ~6 | KDF, encrypt/decrypt, tamper detection |
+| Integration | ~9 | Lock/unlock UX, server payload shape, poll-under-lock, LWW under lock |
+| E2E | 2 | Full lock cycle + cross-context unlock |
+
+**Quality gates**
+- Server response for a locked board contains no plaintext fields beyond `{ locked, ciphertext, iv, kdfSalt, kdfIters, updatedAt }`. Smoke-tested at the network layer.
+- Key derivation uses `kdfIters ≥ 250_000`; pinned by a unit test that asserts the persisted envelope's `kdfIters` value.
+- A locked board's debounced save MUST encrypt before the timer fires; a test asserts no plaintext text/colors appear in `repository.save` arguments while locked.
+- The unlock panel does not render anything that reveals the board's structure (no card count, no thread count, no slug-derived info) — the entire payload is opaque until decrypted.
+- `npm run build` bundle stays under 250kb gzipped (Phase 8 quality gate). PBKDF2 + AES-GCM are in WebCrypto — no library footprint.
 
 ---
 
