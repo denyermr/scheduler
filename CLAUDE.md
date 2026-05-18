@@ -30,7 +30,7 @@ The full design spec lives in `design/` (HTML + JSX artboards). Treat it as auth
 | Commit hooks | Husky + lint-staged |
 | CI | GitHub Actions (or equivalent) |
 | Persistence (Phases 1–6) | `BoardRepository` interface, localStorage impl |
-| Persistence (Phase 7) | Backend choice still open; sync mechanism locked to **10s poll** (see §9). |
+| Persistence (Phase 7) | **Node + SQLite** via single-file `node:http` + `better-sqlite3` server (`server/`); opaque-blob-per-slug schema. Sync mechanism locked to **10s poll** (see §9). Detail in `reviews/phase-7-backend-decision.md`. |
 
 Do **not** introduce additional runtime dependencies without justification in the phase review.
 
@@ -63,6 +63,9 @@ Do **not** introduce additional runtime dependencies without justification in th
 │   │   └── tokens.ts        # Colors, fonts, surface gradients
 │   ├── state/               # React state wiring (hooks, context)
 │   └── app.tsx
+├── server/                  # Phase 7+ backend (node:http + better-sqlite3)
+│   ├── server.ts            # Single-file HTTP server
+│   └── db.ts                # SQLite open + schema bootstrap
 ├── tests/
 │   ├── unit/                # Mirrors src/ structure
 │   ├── integration/
@@ -271,7 +274,7 @@ For full storyboards, read `design/workflows.jsx`. Summary:
 
 Remaining open decisions for the named phase boundary.
 
-- **Backend choice** (Phase 7 boundary). Options: Cloudflare Workers + Durable Objects, Supabase, Node + SQLite + minimal HTTP. Decision documented in `reviews/phase-7-backend-decision.md`. **Sync mechanism is locked: 10-second poll on the client for remote changes** — backend choice does not change that. Whichever backend is chosen must be able to store an opaque `{ ciphertext, iv, kdfSalt, kdfIters }` blob in place of the plaintext board for Phase 7.5's lockable-board work — i.e. its persistence schema must not assume the board is structured JSON it can index by `cardId` server-side.
+- **Backend choice** (Phase 7 — resolved 2026-05-18). **Node + SQLite** via a single-file `node:http` + `better-sqlite3` server in `server/`. Schema is `boards(slug TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at INTEGER NOT NULL)`; `payload` is an opaque JSON envelope the server never parses. Endpoints: `GET /b/:slug`, `PATCH /b/:slug`, `DELETE /b/:slug` — no per-entity routes. Local-dev and tests use the same code via an in-process `http.Server` on an ephemeral port (`:memory:` SQLite in tests, `data/dev.sqlite` in dev). Cloud deploy (Fly / Render with a persistent disk) is deferred to Phase 8. **Sync mechanism is locked: 10-second poll on the client** regardless of backend. The opaque-blob model is what makes Phase 7.5's `{ ciphertext, iv, kdfSalt, kdfIters }` envelope a zero-migration addition. Full rationale in `reviews/phase-7-backend-decision.md`.
 - **Slug generation** (Phase 7). **Four random words + 4-digit suffix** (e.g. `oak-thread-helmet-tractor-7421`). Word list committed inline in `src/persistence/slug.ts` (~1500 adjectives + ~1500 nouns; review-able plain TS arrays, no external dep). With ≥ 1500-word lists this is `1500⁴ × 10⁴ ≈ 5 × 10¹⁶` combinations — bots and scanners cannot enumerate the space. Collisions are tolerated by the backend (slug uniqueness is not enforced on the client).
 - **Per-board passphrase lock** (Phase 7.5). Optional, opt-in per board. PBKDF2-SHA-256 with `kdfIters ≥ 250_000` derives a 256-bit key from `passphrase + kdfSalt` (16 random bytes per board). Content encrypted with AES-GCM-256 and a per-write random IV. Server stores only the ciphertext envelope. Lost passphrase = lost board; this is by design (no accounts, no recovery email).
 - **Domain / hosting** (Phase 8 / launch).
@@ -292,3 +295,4 @@ Material spec changes after a phase has shipped. Keep terse.
 | 2026-05-16 | 7 | Sync mechanism locked to 10-second poll (was TBD between polling/WS/SSE). Backend choice remains open. | Design drop concluded a poll suffices for v1's LWW model — simpler and avoids WS infra. |
 | 2026-05-18 | 7 | Slug widened from `word-word-NNN` (2 + 3-digit, ~2 × 10⁹ combos) to `word-word-word-word-NNNN` (4 + 4-digit, ~5 × 10¹⁶ combos). Invariant 1 footnote about slug entropy added. | "Anyone with the link can edit" only holds if the link can't be guessed. The original `oak-thread-942` shape was scannable; bumping to four words + four digits makes brute discovery infeasible for free. |
 | 2026-05-18 | 7.5 (new) | Introduced **optional per-board passphrase lock** (PBKDF2 + AES-GCM, client-side encryption). New invariant 11: locked boards never round-trip plaintext. New section in BUILD_PLAN.md. §1 product paragraph updated; §5 invariant 2 amended with the passphrase footnote. | Users want to put company-scale info on boards without giving up the no-accounts model. Optional encryption is the in-between — casual boards stay frictionless, sensitive ones get a wall, identity-free. |
+| 2026-05-18 | 7 | Backend choice resolved: **Node + SQLite** via `node:http` + `better-sqlite3`. One table, opaque `payload TEXT` per slug; three endpoints (`GET / PATCH / DELETE /b/:slug`). Wire format is a discriminated-union envelope `{ locked: false, board, updatedAt }` from day one; Phase 7.5 adds the `{ locked: true, ... }` arm with no migration. `DEMO_SLUG = 'oak-thread-942'` scrapped; `/` redirects to a freshly generated slug. `commitFromRemote(next)` added to `useBoardEditor` so poll-induced merges never enter the local undo stack. `PollDriver` injection mirrors the `Clock` pattern. Routing is plain `pathname` + `pushState` (no React Router). Threads kept without per-entity `updatedAt` — set-diff by id is enough since threads are immutable. | Phase 7 ships green without a cloud-account dependency (cloud cut-over → Phase 8 per `feedback_defer_blockers`). Same server runs locally and on Fly/Render. The opaque-blob model is the hard constraint that makes Phase 7.5 a zero-migration add. Full rationale in `reviews/phase-7-backend-decision.md`. |

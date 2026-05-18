@@ -43,3 +43,6 @@ blob-report/
 
 # TypeScript
 *.tsbuildinfo
+
+# Server data (Phase 7 — local SQLite file for the dev server)
+data/
