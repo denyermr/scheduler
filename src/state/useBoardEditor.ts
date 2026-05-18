@@ -70,6 +70,19 @@ export type UseBoardEditorResult = {
   commitEdit: () => void;
   cancelEdit: () => void;
   deleteEditing: () => void;
+  /**
+   * Replace the board with the result of a remote-merge (10s poll → LWW).
+   *
+   * Unlike `commit`, this path:
+   *   - does NOT push the previous board onto the undo stack
+   *     (Cmd-Z must never roll back another user's edit), and
+   *   - does NOT call `scheduleSave` (the change is already on the server
+   *     as of `envelopeUpdatedAt`; re-writing it would overwrite fresher
+   *     local writes that haven't been flushed yet).
+   *
+   * Pinned by tests/integration/remoteMerge.test.ts.
+   */
+  commitFromRemote: (next: Board) => void;
   /** Move a card to (week, day). Bumps updatedAt + assigns z. No-op if same cell. */
   moveCardTo: (cardId: CardId, week: Week, day: Day) => void;
   /** Rotate the z-order of cards in (week, day). No-op if 0 or 1 cards there. */
@@ -184,6 +197,16 @@ export function useBoardEditor(
   );
 
   const commit = useCallback((next: Board) => {
+    boardRef.current = next;
+    setBoard(next);
+  }, []);
+
+  const commitFromRemote = useCallback((next: Board) => {
+    // Replace the board WITHOUT pushing onto undo and WITHOUT scheduling a
+    // save. The merge result is already what the server holds; pushing
+    // undo would let Cmd-Z roll back a collaborator's edit (wrong UX), and
+    // saving would overwrite any locally-unflushed writes with the older
+    // server snapshot.
     boardRef.current = next;
     setBoard(next);
   }, []);
@@ -545,6 +568,7 @@ export function useBoardEditor(
     commitEdit,
     cancelEdit,
     deleteEditing,
+    commitFromRemote,
     moveCardTo,
     cycleCellStack,
     createThread,
