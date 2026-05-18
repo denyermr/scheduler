@@ -116,6 +116,101 @@ describe('useBoardEditor.commitFromRemote — poll merges do not enter undo', ()
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
+  it('mergeIncoming: incoming card added; existing local card kept (LWW); no undo entry', async () => {
+    const seed = seedOneCard(emptyBoard());
+    const { result } = await mountEditor(seed.board);
+
+    expect(result.current.canUndo).toBe(false);
+
+    // Incoming board has a brand-new card we haven't seen, AND a stale copy
+    // of our seed card (older updatedAt → local wins).
+    const incoming: Board = {
+      ...result.current.board!,
+      cards: [
+        ...result.current.board!.cards.map((c) =>
+          c.id === seed.id ? { ...c, updatedAt: 50 } : c, // older than local
+        ),
+        {
+          id: 'remote_card',
+          week: 1,
+          day: 2 as Day,
+          color: 'sky' as const,
+          text: 'from another tab',
+          rotation: 0,
+          pin: '#3a7ed6' as const,
+          createdAt: 5000,
+          updatedAt: 5000,
+          z: 0,
+        },
+      ],
+    };
+
+    act(() => {
+      result.current.mergeIncoming(incoming, 5000);
+    });
+
+    const ids = result.current.board?.cards.map((c) => c.id).sort();
+    expect(ids).toEqual(['card_seed', 'remote_card']);
+    // The local card kept its identity (we passed an older updatedAt for it
+    // in incoming, so LWW picks local).
+    const seedCard = result.current.board?.cards.find((c) => c.id === seed.id);
+    expect(seedCard?.text).toBe('original');
+    // The merge MUST NOT enter the undo stack.
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.undoStackSize).toBe(0);
+  });
+
+  it('mergeIncoming: if a save is queued, the pending board is updated to include merge result', async () => {
+    // Scenario: user mutates locally (save queued), then a poll arrives that
+    // adds someone else's card. The merge folds in the remote add. When the
+    // queued save fires, it MUST PATCH the merged board (not the pre-merge
+    // local) — otherwise the remote add gets clobbered server-side.
+    const seed = seedOneCard(emptyBoard());
+    const { result, saveSpy } = await mountEditor(seed.board);
+
+    // Local mutation: move the card. This queues a save.
+    act(() => {
+      result.current.moveCardTo(seed.id, 2, 3 as Day);
+    });
+    expect(saveSpy).not.toHaveBeenCalled(); // not yet — debounced
+
+    // Poll arrives with a new remote card before our save fires.
+    const incoming: Board = {
+      ...result.current.board!,
+      cards: [
+        ...result.current.board!.cards,
+        {
+          id: 'remote_card',
+          week: 0,
+          day: 6 as Day,
+          color: 'mint' as const,
+          text: 'concurrent add',
+          rotation: 0,
+          pin: '#3aa15a' as const,
+          createdAt: 6000,
+          updatedAt: 6000,
+          z: 0,
+        },
+      ],
+    };
+    act(() => {
+      result.current.mergeIncoming(incoming, 6000);
+    });
+
+    // Wait for the debounce timer (250ms) to fire the save.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
+
+    // The save MUST have been called with the MERGED board (containing both
+    // the moved seed card AND the remote_card) — not the pre-merge local
+    // (which lacked remote_card).
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    const savedBoard = saveSpy.mock.calls[0]?.[1] as Board;
+    const savedIds = savedBoard.cards.map((c) => c.id).sort();
+    expect(savedIds).toEqual(['card_seed', 'remote_card']);
+  });
+
   it('a remote merge after a local mutation preserves the local mutation in undo', async () => {
     // Setup: a local mutation puts something on the undo stack. A subsequent
     // remote merge MUST NOT pop / push anything that disturbs that snapshot.
