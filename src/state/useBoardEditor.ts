@@ -5,6 +5,7 @@ import {
   deleteCard,
   deleteThread,
   moveCard,
+  resizeWeeks,
   updateCard,
 } from '../domain/board';
 import { cycleStack } from '../domain/stacking';
@@ -18,9 +19,13 @@ import type {
   ThreadId,
   Week,
 } from '../domain/types';
+import { DAYS } from '../domain/types';
+import { MAX_WEEKS, MIN_WEEKS, clampWeeks } from '../domain/weeks';
 import type { BoardRepository } from '../persistence/repository';
+import { History } from './history';
 
 export const DEFAULT_DEBOUNCE_MS = 250;
+export const HISTORY_CAPACITY = 50;
 
 export type EditorState =
   | { kind: 'idle' }
@@ -33,16 +38,31 @@ export type EditorState =
       original: Card | null;
     };
 
+export type NudgeDirection = 'up' | 'down' | 'left' | 'right';
+
+export type PendingResize = {
+  weeks: number;
+  cutCardIds: readonly CardId[];
+};
+
 export type UseBoardEditorOptions = {
   repository: BoardRepository;
   slug: string;
   clock: Clock;
   debounceMs?: number;
+  historyCapacity?: number;
 };
 
 export type UseBoardEditorResult = {
   board: Board | null;
   editor: EditorState;
+  selectedCardId: CardId | null;
+  pendingResize: PendingResize | null;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Test/diagnostic: current size of the undo stack. */
+  undoStackSize: number;
+
   beginNew: (week: Week, day: Day) => void;
   beginEdit: (cardId: CardId) => void;
   setEditingText: (text: string) => void;
@@ -58,35 +78,83 @@ export type UseBoardEditorResult = {
   createThread: (fromCardId: CardId, toCardId: CardId) => void;
   /** Delete a thread by id. No-op if the id is unknown. */
   deleteThreadById: (threadId: ThreadId) => void;
+
+  // ── Phase 6 surface ────────────────────────────────────────────────
+  selectCard: (cardId: CardId) => void;
+  clearSelection: () => void;
+  /** Move the selected card by one cell, clamped to board bounds. No-op if no selection. */
+  nudgeSelected: (direction: NudgeDirection) => void;
+  /** Delete the selected card (when no popover is active). No-op if no selection. */
+  deleteSelected: () => void;
+
+  undo: () => void;
+  redo: () => void;
+
+  /** Request a board resize. If shrink would cut cards, sets pendingResize for the UI. */
+  requestResize: (weeks: number) => void;
+  confirmPendingResize: () => void;
+  cancelPendingResize: () => void;
 };
 
 /**
- * Owns the board state, the editor state, and the debounced repository write.
- * Components do not call `localStorage` or the repository directly — every
- * persisted mutation flows through here.
+ * Owns the board state, the editor state, undo/redo history, selection, and
+ * the debounced repository write. Components do not call `localStorage` or the
+ * repository directly — every persisted mutation flows through here.
+ *
+ * Snapshot rule (Phase 6):
+ *   - Non-editing actions (move / cycle / thread / nudge / delete-selected /
+ *     resize) push the pre-mutation board onto the undo stack.
+ *   - An editing session (beginEdit/beginNew → commitEdit/deleteEditing)
+ *     pushes the pre-session board at most once, and only if the board
+ *     actually changed by session end. Typing in the popover doesn't
+ *     produce one undo per keystroke.
+ *   - cancelEdit reverts in-place and pushes nothing.
+ *   - undo / redo themselves do not push.
  */
 export function useBoardEditor(
   options: UseBoardEditorOptions,
 ): UseBoardEditorResult {
   const { repository, slug, clock } = options;
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+  const historyCapacity = options.historyCapacity ?? HISTORY_CAPACITY;
 
   const [board, setBoard] = useState<Board | null>(null);
   const [editor, setEditor] = useState<EditorState>({ kind: 'idle' });
+  const [selectedCardId, setSelectedCardId] = useState<CardId | null>(null);
+  const [pendingResize, setPendingResize] = useState<PendingResize | null>(null);
+  // History lives in a ref so it isn't recreated on every render. canUndo /
+  // canRedo / undoStackSize are mirrored into state so render can read them
+  // without accessing the ref's `current` (the React 19 compiler lint rule
+  // `react-hooks/refs` rejects ref reads during render).
+  const historyRef = useRef<History<Board>>(new History<Board>(historyCapacity));
+  const [historyMeta, setHistoryMeta] = useState<{
+    canUndo: boolean;
+    canRedo: boolean;
+    undoStackSize: number;
+  }>({ canUndo: false, canRedo: false, undoStackSize: 0 });
+  const bumpHistory = useCallback(() => {
+    const h = historyRef.current;
+    setHistoryMeta({
+      canUndo: h.canUndo(),
+      canRedo: h.canRedo(),
+      undoStackSize: h.size().undo,
+    });
+  }, []);
 
-  // Mirror the latest editor + board in refs so action callbacks read fresh
-  // values without depending on state in their dep arrays. Effects sync after
-  // every commit; handlers fire post-commit so they always read fresh values.
+  // Track whether the current editing session has already taken a snapshot,
+  // and the board state at the moment editing began (for cancelEdit's revert).
+  const sessionStartBoardRef = useRef<Board | null>(null);
+
   const editorRef = useRef<EditorState>(editor);
   const boardRef = useRef<Board | null>(board);
+  const selectedCardIdRef = useRef<CardId | null>(selectedCardId);
   useEffect(() => {
     editorRef.current = editor;
     boardRef.current = board;
+    selectedCardIdRef.current = selectedCardId;
   });
 
   const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The latest board the timer should persist when it fires; the setTimeout
-  // closure can't read the live state directly.
   const pendingBoard = useRef<Board | null>(null);
 
   const cancelPendingSave = useCallback(() => {
@@ -120,7 +188,15 @@ export function useBoardEditor(
     setBoard(next);
   }, []);
 
-  // Initial load. Re-runs if slug/repository change.
+  const pushUndo = useCallback(
+    (snapshot: Board) => {
+      historyRef.current.push(snapshot);
+      bumpHistory();
+    },
+    [bumpHistory],
+  );
+
+  // Initial load.
   useEffect(() => {
     let cancelled = false;
     void repository.load(slug).then((loaded) => {
@@ -133,7 +209,7 @@ export function useBoardEditor(
     };
   }, [repository, slug]);
 
-  // Flush any pending save on unmount so we don't drop the user's last keystroke.
+  // Flush any pending save on unmount.
   useEffect(() => {
     return (): void => {
       if (pendingSave.current !== null && pendingBoard.current !== null) {
@@ -146,10 +222,12 @@ export function useBoardEditor(
     };
   }, [repository, slug]);
 
+  // ─── Editing-session actions ────────────────────────────────────────
   const beginNew = useCallback(
     (week: Week, day: Day) => {
       const current = boardRef.current;
       if (current === null) return;
+      sessionStartBoardRef.current = current;
       const { board: next, cardId } = addCard(current, {
         week,
         day,
@@ -164,6 +242,7 @@ export function useBoardEditor(
       };
       editorRef.current = editing;
       setEditor(editing);
+      setSelectedCardId(cardId);
       scheduleSave(next);
     },
     [clock, commit, scheduleSave],
@@ -174,6 +253,7 @@ export function useBoardEditor(
     if (current === null) return;
     const card = current.cards.find((c) => c.id === cardId);
     if (!card) return;
+    sessionStartBoardRef.current = current;
     const editing: EditorState = {
       kind: 'editing',
       cardId,
@@ -182,6 +262,7 @@ export function useBoardEditor(
     };
     editorRef.current = editing;
     setEditor(editing);
+    setSelectedCardId(cardId);
   }, []);
 
   const setEditingText = useCallback(
@@ -208,38 +289,47 @@ export function useBoardEditor(
     [clock, commit, scheduleSave],
   );
 
+  /** Push the session-start snapshot iff the board changed during the session. */
+  const endEditingSessionWithSnapshot = useCallback(() => {
+    const start = sessionStartBoardRef.current;
+    const current = boardRef.current;
+    sessionStartBoardRef.current = null;
+    if (start !== null && current !== null && start !== current) {
+      pushUndo(start);
+    }
+  }, [pushUndo]);
+
   const commitEdit = useCallback(() => {
+    endEditingSessionWithSnapshot();
     editorRef.current = { kind: 'idle' };
     setEditor({ kind: 'idle' });
-  }, []);
+  }, [endEditingSessionWithSnapshot]);
 
   const cancelEdit = useCallback(() => {
     const ed = editorRef.current;
-    const current = boardRef.current;
-    if (ed.kind !== 'editing' || current === null) return;
+    const start = sessionStartBoardRef.current;
+    if (ed.kind !== 'editing') return;
 
+    // Revert to the session-start board in-place. cancelEdit never pushes.
     if (ed.isNew) {
       cancelPendingSave();
-      const next = deleteCard(current, ed.cardId);
-      commit(next);
-      editorRef.current = { kind: 'idle' };
-      setEditor({ kind: 'idle' });
-      return;
     }
-
-    if (ed.original !== null) {
-      const next = updateCard(
-        current,
-        ed.cardId,
-        { text: ed.original.text, color: ed.original.color },
-        { clock },
-      );
-      commit(next);
-      scheduleSave(next);
+    if (start !== null) {
+      commit(start);
+      // If this was a real edit on an existing card, persist the revert so the
+      // user's reload doesn't show the abandoned in-progress text.
+      if (!ed.isNew) {
+        scheduleSave(start);
+      }
     }
+    sessionStartBoardRef.current = null;
     editorRef.current = { kind: 'idle' };
     setEditor({ kind: 'idle' });
-  }, [cancelPendingSave, clock, commit, scheduleSave]);
+    if (ed.isNew) {
+      // Don't keep the just-removed card selected.
+      setSelectedCardId(null);
+    }
+  }, [cancelPendingSave, commit, scheduleSave]);
 
   const deleteEditing = useCallback(() => {
     const ed = editorRef.current;
@@ -248,20 +338,25 @@ export function useBoardEditor(
     const next = deleteCard(current, ed.cardId);
     commit(next);
     scheduleSave(next);
+    // The deletion ends the session; push the pre-session snapshot.
+    endEditingSessionWithSnapshot();
     editorRef.current = { kind: 'idle' };
     setEditor({ kind: 'idle' });
-  }, [commit, scheduleSave]);
+    setSelectedCardId(null);
+  }, [commit, endEditingSessionWithSnapshot, scheduleSave]);
 
+  // ─── Non-editing mutations ──────────────────────────────────────────
   const moveCardTo = useCallback(
     (cardId: CardId, week: Week, day: Day) => {
       const current = boardRef.current;
       if (current === null) return;
       const next = moveCard(current, cardId, { week, day }, { clock });
       if (next === current) return;
+      pushUndo(current);
       commit(next);
       scheduleSave(next);
     },
-    [clock, commit, scheduleSave],
+    [clock, commit, pushUndo, scheduleSave],
   );
 
   const cycleCellStack = useCallback(
@@ -270,10 +365,11 @@ export function useBoardEditor(
       if (current === null) return;
       const next = cycleStack(current, week, day, { clock });
       if (next === current) return;
+      pushUndo(current);
       commit(next);
       scheduleSave(next);
     },
-    [clock, commit, scheduleSave],
+    [clock, commit, pushUndo, scheduleSave],
   );
 
   const createThread = useCallback(
@@ -281,8 +377,6 @@ export function useBoardEditor(
       const current = boardRef.current;
       if (current === null) return;
       if (fromCardId === toCardId) return;
-      // Treat duplicates (in either direction) as no-ops — workflow 03 allows
-      // accidentally re-drawing an existing thread without an error popup.
       const exists = current.threads.some(
         (t) =>
           (t.fromCardId === fromCardId && t.toCardId === toCardId) ||
@@ -290,10 +384,11 @@ export function useBoardEditor(
       );
       if (exists) return;
       const next = addThread(current, { fromCardId, toCardId });
+      pushUndo(current);
       commit(next.board);
       scheduleSave(next.board);
     },
-    [commit, scheduleSave],
+    [commit, pushUndo, scheduleSave],
   );
 
   const deleteThreadById = useCallback(
@@ -302,15 +397,147 @@ export function useBoardEditor(
       if (current === null) return;
       if (!current.threads.some((t) => t.id === threadId)) return;
       const next = deleteThread(current, threadId);
+      pushUndo(current);
       commit(next);
       scheduleSave(next);
     },
-    [commit, scheduleSave],
+    [commit, pushUndo, scheduleSave],
   );
+
+  // ─── Selection + keyboard-driven mutations ─────────────────────────
+  const selectCard = useCallback((cardId: CardId) => {
+    setSelectedCardId(cardId);
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedCardId(null);
+  }, []);
+
+  const nudgeSelected = useCallback(
+    (direction: NudgeDirection) => {
+      const current = boardRef.current;
+      if (current === null) return;
+      const id = selectedCardIdRef.current;
+      if (id === null) return;
+      const card = current.cards.find((c) => c.id === id);
+      if (!card) return;
+      let nextWeek = card.week;
+      let nextDay: number = card.day;
+      if (direction === 'up') nextWeek -= 1;
+      else if (direction === 'down') nextWeek += 1;
+      else if (direction === 'left') nextDay -= 1;
+      else if (direction === 'right') nextDay += 1;
+      // Clamp to board bounds.
+      if (nextWeek < 0) nextWeek = 0;
+      if (nextWeek > current.weeks - 1) nextWeek = current.weeks - 1;
+      if (nextDay < 0) nextDay = 0;
+      if (nextDay > DAYS.length - 1) nextDay = DAYS.length - 1;
+      if (nextWeek === card.week && nextDay === card.day) return;
+      const next = moveCard(
+        current,
+        id,
+        { week: nextWeek, day: nextDay as Day },
+        { clock },
+      );
+      if (next === current) return;
+      pushUndo(current);
+      commit(next);
+      scheduleSave(next);
+    },
+    [clock, commit, pushUndo, scheduleSave],
+  );
+
+  const deleteSelected = useCallback(() => {
+    const current = boardRef.current;
+    if (current === null) return;
+    const id = selectedCardIdRef.current;
+    if (id === null) return;
+    if (!current.cards.some((c) => c.id === id)) return;
+    const next = deleteCard(current, id);
+    pushUndo(current);
+    commit(next);
+    scheduleSave(next);
+    setSelectedCardId(null);
+  }, [commit, pushUndo, scheduleSave]);
+
+  // ─── Undo / redo ────────────────────────────────────────────────────
+  const undo = useCallback(() => {
+    const current = boardRef.current;
+    if (current === null) return;
+    const restored = historyRef.current.undo(current);
+    if (restored === null) return;
+    commit(restored);
+    scheduleSave(restored);
+    bumpHistory();
+  }, [bumpHistory, commit, scheduleSave]);
+
+  const redo = useCallback(() => {
+    const current = boardRef.current;
+    if (current === null) return;
+    const restored = historyRef.current.redo(current);
+    if (restored === null) return;
+    commit(restored);
+    scheduleSave(restored);
+    bumpHistory();
+  }, [bumpHistory, commit, scheduleSave]);
+
+  // ─── Resize ─────────────────────────────────────────────────────────
+  const requestResize = useCallback(
+    (weeksRaw: number) => {
+      const current = boardRef.current;
+      if (current === null) return;
+      const target = clampWeeks(weeksRaw);
+      if (target === current.weeks) {
+        setPendingResize(null);
+        return;
+      }
+      // Shrink: any card with week >= target would be cut.
+      if (target < current.weeks) {
+        const cutCardIds = current.cards
+          .filter((c) => c.week >= target)
+          .map((c) => c.id);
+        if (cutCardIds.length > 0) {
+          setPendingResize({ weeks: target, cutCardIds });
+          return;
+        }
+      }
+      // Safe — commit immediately.
+      const { board: next } = resizeWeeks(current, target);
+      pushUndo(current);
+      commit(next);
+      scheduleSave(next);
+      setPendingResize(null);
+    },
+    [commit, pushUndo, scheduleSave],
+  );
+
+  const confirmPendingResize = useCallback(() => {
+    const current = boardRef.current;
+    const p = pendingResize;
+    if (current === null || p === null) return;
+    const { board: next } = resizeWeeks(current, p.weeks);
+    pushUndo(current);
+    commit(next);
+    scheduleSave(next);
+    setPendingResize(null);
+  }, [commit, pendingResize, pushUndo, scheduleSave]);
+
+  const cancelPendingResizeAction = useCallback(() => {
+    setPendingResize(null);
+  }, []);
+
+  void MIN_WEEKS;
+  void MAX_WEEKS;
 
   return {
     board,
     editor,
+    selectedCardId,
+    pendingResize,
+    canUndo: historyMeta.canUndo,
+    canRedo: historyMeta.canRedo,
+    undoStackSize: historyMeta.undoStackSize,
+
     beginNew,
     beginEdit,
     setEditingText,
@@ -322,5 +549,15 @@ export function useBoardEditor(
     cycleCellStack,
     createThread,
     deleteThreadById,
+
+    selectCard,
+    clearSelection,
+    nudgeSelected,
+    deleteSelected,
+    undo,
+    redo,
+    requestResize,
+    confirmPendingResize,
+    cancelPendingResize: cancelPendingResizeAction,
   };
 }
