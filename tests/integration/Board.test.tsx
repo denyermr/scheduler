@@ -102,6 +102,56 @@ describe('<Board />', () => {
     expect(paths[0]!.getAttribute('d')).toBe(expected);
   });
 
+  it('renders the threads layer ABOVE resting card slots so a vertical thread is visible between overlapping cards', () => {
+    // At 1440 px containerWidth, computed cardSize = min(cellW/56, cellH/38) =
+    // min(180/56, 99/38) = 2.6. Card rendered min-height (with paddingY×2) is
+    // 42 × 2.6 ≈ 109 px — taller than the 99 px cell. Two vertically adjacent
+    // cards (same day, consecutive weeks) overlap each other, and the thread
+    // path between them is a straight vertical line that runs entirely inside
+    // those two cards. The only way the thread can show is for its <svg>
+    // layer to paint above the card slots.
+    let board = createBoard({ startMonday: '2024-05-27', weeks: 4 });
+    const a = addCard(board, {
+      week: 0,
+      day: 3,
+      color: 'peach',
+      text: 'A',
+      newId: () => 'card_a',
+    });
+    board = a.board;
+    const b = addCard(board, {
+      week: 1,
+      day: 3,
+      color: 'peach',
+      text: 'B',
+      newId: () => 'card_b',
+    });
+    board = b.board;
+    board = addThread(board, {
+      fromCardId: a.cardId,
+      toCardId: b.cardId,
+      newId: () => 'thread_ab',
+    }).board;
+
+    const { container } = render(
+      <Board board={board} containerWidth={TEST_CONTAINER} />,
+    );
+
+    const threadSvg = container.querySelector(
+      '[data-testid="thread-path"]',
+    )?.closest('svg') as SVGElement | null;
+    if (!threadSvg) throw new Error('no thread svg in DOM');
+    const threadZ = Number(threadSvg.style.zIndex);
+    const slot = container.querySelector(
+      '[data-card-id="card_a"]',
+    ) as HTMLElement | null;
+    if (!slot) throw new Error('no card slot');
+    const slotZ = Number(slot.style.zIndex);
+
+    expect(Number.isFinite(threadZ)).toBe(true);
+    expect(threadZ).toBeGreaterThan(slotZ);
+  });
+
   it('skips threads whose endpoint cards no longer exist', () => {
     let board = createBoard({ startMonday: '2024-05-27', weeks: 4 });
     const a = addCard(board, {

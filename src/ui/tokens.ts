@@ -95,6 +95,16 @@ export const THREAD_HIT_WIDTH = 12;
 /** Dash pattern for the in-progress thread path while drawing. */
 export const THREAD_DRAWING_DASH = '5 4';
 
+/**
+ * Stacking level for the threads layer. Sits above resting cards (default
+ * z=0 in their cell) so a thread between two vertically aligned cards
+ * (which always visually overlap, since rendered card height exceeds cellH)
+ * remains visible. Stays below hovered (500) / lifted (1000) cards so the
+ * drag-lift visual still floats above the threads, and below the popover
+ * anchor (30) so the edit popover isn't covered.
+ */
+export const THREAD_LAYER_Z = 10;
+
 /** Day-header badge styling. Weekend (Sat=5, Sun=6) is muted. */
 export const DAY_HEADER_BADGE = {
   weekday: {
