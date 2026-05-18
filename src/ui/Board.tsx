@@ -39,6 +39,7 @@ import {
   THREAD_DRAWING_DASH,
   THREAD_HANDLE_FILL,
   THREAD_HANDLE_RING,
+  THREAD_LAYER_Z,
   THREAD_OPACITY,
   THREAD_STROKE,
   THREAD_WIDTH,
@@ -900,7 +901,12 @@ export function Board({
         <svg
           width={W}
           height={H}
-          style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            zIndex: THREAD_LAYER_Z,
+          }}
           aria-hidden
         >
           <ThreadShadowDefs />
