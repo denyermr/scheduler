@@ -83,6 +83,18 @@ export const THREAD_STROKE = '#9c5a2e';
 export const THREAD_WIDTH = 1.8;
 export const THREAD_OPACITY = 0.92;
 
+/** Thread-creation handle (workflow 03) — 10 px red-brown disc with white ring. */
+export const THREAD_HANDLE_FILL = '#9c5a2e';
+export const THREAD_HANDLE_RING = '#ffffff';
+/** Stroke color used for the brief click-flash before a thread is deleted. */
+export const THREAD_DELETE_FLASH_STROKE = '#d6463a';
+/** Duration of the click-flash before the thread is removed (ms). */
+export const THREAD_DELETE_FLASH_MS = 100;
+/** Invisible hit-area stroke width (px) used to make the thread clickable. */
+export const THREAD_HIT_WIDTH = 12;
+/** Dash pattern for the in-progress thread path while drawing. */
+export const THREAD_DRAWING_DASH = '5 4';
+
 /** Day-header badge styling. Weekend (Sat=5, Sun=6) is muted. */
 export const DAY_HEADER_BADGE = {
   weekday: {

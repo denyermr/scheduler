@@ -79,6 +79,8 @@ export function App({
     deleteEditing,
     moveCardTo,
     cycleCellStack,
+    createThread,
+    deleteThreadById,
   } = useBoardEditor({ repository, slug, clock, debounceMs });
   const { ref: stageRef, width: measuredWidth } = useContainerWidth();
   const stageWidth = containerWidthOverride ?? measuredWidth;
@@ -153,6 +155,8 @@ export function App({
             onCardClick={beginEdit}
             onCardDrop={moveCardTo}
             onCellCycle={cycleCellStack}
+            onThreadCreate={createThread}
+            onThreadDelete={deleteThreadById}
             popoverForCard={
               editor.kind === 'editing' ? editor.cardId : undefined
             }

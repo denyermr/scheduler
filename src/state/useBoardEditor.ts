@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   addCard,
+  addThread,
   deleteCard,
+  deleteThread,
   moveCard,
   updateCard,
 } from '../domain/board';
@@ -13,6 +15,7 @@ import type {
   CardId,
   Color,
   Day,
+  ThreadId,
   Week,
 } from '../domain/types';
 import type { BoardRepository } from '../persistence/repository';
@@ -51,6 +54,10 @@ export type UseBoardEditorResult = {
   moveCardTo: (cardId: CardId, week: Week, day: Day) => void;
   /** Rotate the z-order of cards in (week, day). No-op if 0 or 1 cards there. */
   cycleCellStack: (week: Week, day: Day) => void;
+  /** Create a thread from one card to another. No-op on self-thread / duplicate. */
+  createThread: (fromCardId: CardId, toCardId: CardId) => void;
+  /** Delete a thread by id. No-op if the id is unknown. */
+  deleteThreadById: (threadId: ThreadId) => void;
 };
 
 /**
@@ -269,6 +276,38 @@ export function useBoardEditor(
     [clock, commit, scheduleSave],
   );
 
+  const createThread = useCallback(
+    (fromCardId: CardId, toCardId: CardId) => {
+      const current = boardRef.current;
+      if (current === null) return;
+      if (fromCardId === toCardId) return;
+      // Treat duplicates (in either direction) as no-ops — workflow 03 allows
+      // accidentally re-drawing an existing thread without an error popup.
+      const exists = current.threads.some(
+        (t) =>
+          (t.fromCardId === fromCardId && t.toCardId === toCardId) ||
+          (t.fromCardId === toCardId && t.toCardId === fromCardId),
+      );
+      if (exists) return;
+      const next = addThread(current, { fromCardId, toCardId });
+      commit(next.board);
+      scheduleSave(next.board);
+    },
+    [commit, scheduleSave],
+  );
+
+  const deleteThreadById = useCallback(
+    (threadId: ThreadId) => {
+      const current = boardRef.current;
+      if (current === null) return;
+      if (!current.threads.some((t) => t.id === threadId)) return;
+      const next = deleteThread(current, threadId);
+      commit(next);
+      scheduleSave(next);
+    },
+    [commit, scheduleSave],
+  );
+
   return {
     board,
     editor,
@@ -281,5 +320,7 @@ export function useBoardEditor(
     deleteEditing,
     moveCardTo,
     cycleCellStack,
+    createThread,
+    deleteThreadById,
   };
 }
