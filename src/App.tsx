@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Clock } from './domain/clock';
 import { Board } from './ui/Board';
 import { EditPopover } from './ui/EditPopover';
@@ -67,9 +67,11 @@ export function App({
     () => repositoryProp ?? new LocalStorageRepository(),
     [repositoryProp],
   );
+  const editorState = useBoardEditor({ repository, slug, clock, debounceMs });
   const {
     board,
     editor,
+    selectedCardId,
     beginNew,
     beginEdit,
     setEditingText,
@@ -81,7 +83,63 @@ export function App({
     cycleCellStack,
     createThread,
     deleteThreadById,
-  } = useBoardEditor({ repository, slug, clock, debounceMs });
+    clearSelection,
+    nudgeSelected,
+    deleteSelected,
+    undo,
+    redo,
+  } = editorState;
+
+  useEffect(() => {
+    const isTextInputTarget = (target: EventTarget | null): boolean => {
+      if (target === null) return false;
+      if (target instanceof HTMLInputElement) return true;
+      if (target instanceof HTMLTextAreaElement) return true;
+      if (target instanceof HTMLElement && target.isContentEditable) return true;
+      return false;
+    };
+
+    const onKey = (e: KeyboardEvent): void => {
+      // Suppress while a text input owns the keystroke. The popover's input,
+      // for instance, must keep Enter/Esc/Backspace/arrows for itself.
+      if (isTextInputTarget(e.target)) return;
+
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        deleteSelected();
+        return;
+      }
+      if (
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight'
+      ) {
+        e.preventDefault();
+        const dir =
+          e.key === 'ArrowUp'
+            ? 'up'
+            : e.key === 'ArrowDown'
+              ? 'down'
+              : e.key === 'ArrowLeft'
+                ? 'left'
+                : 'right';
+        nudgeSelected(dir);
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return (): void => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [undo, redo, deleteSelected, nudgeSelected]);
   const { ref: stageRef, width: measuredWidth } = useContainerWidth();
   const stageWidth = containerWidthOverride ?? measuredWidth;
 
@@ -157,6 +215,8 @@ export function App({
             onCellCycle={cycleCellStack}
             onThreadCreate={createThread}
             onThreadDelete={deleteThreadById}
+            selectedCardId={selectedCardId}
+            onSurfaceClick={clearSelection}
             popoverForCard={
               editor.kind === 'editing' ? editor.cardId : undefined
             }

@@ -73,6 +73,10 @@ export type BoardProps = {
   /** Optional overlay (e.g. EditPopover) positioned below the given card. */
   popoverForCard?: CardId;
   popover?: ReactNode;
+  /** Currently-selected card id (drives the keyboard-nudge focus outline). */
+  selectedCardId?: CardId | null;
+  /** Fires when the user clicks the cork surface (deselect). */
+  onSurfaceClick?: () => void;
 };
 
 type DragState =
@@ -157,6 +161,8 @@ export function Board({
   onThreadDelete,
   popoverForCard,
   popover,
+  selectedCardId,
+  onSurfaceClick,
 }: BoardProps): JSX.Element {
   const { weeks } = board;
   const { cellW, cellH, railW, headerH } = computeBoardMetrics(containerWidth);
@@ -491,8 +497,23 @@ export function Board({
     overflow: 'hidden',
   };
 
+  const onSurfaceClickHandler = onSurfaceClick
+    ? (e: React.MouseEvent<HTMLDivElement>): void => {
+        // Only deselect when the click is on the cork itself (or a non-card
+        // overlay), not bubbling up from a card slot. Card slots stopPropagation.
+        if (e.target === e.currentTarget) {
+          onSurfaceClick();
+        }
+      }
+    : undefined;
+
   return (
-    <div data-testid="board-surface" ref={surfaceRef} style={surfaceStyle}>
+    <div
+      data-testid="board-surface"
+      ref={surfaceRef}
+      style={surfaceStyle}
+      onClick={onSurfaceClickHandler}
+    >
       {/* Grid lines */}
       <svg
         width={W}
@@ -758,11 +779,17 @@ export function Board({
           const isThreadTarget =
             drag.kind === 'thread-drawing' && drag.targetCardId === card.id;
 
+          const isSelected =
+            selectedCardId === card.id &&
+            popoverForCard !== card.id;
           return (
             <div
               key={card.id}
               data-testid="card-slot"
               data-card-id={card.id}
+              data-card-week={card.week}
+              data-card-day={card.day}
+              data-selected={isSelected ? 'true' : undefined}
               data-dragging={
                 liftedVisual ? 'lifted' : isSnapping ? 'snapping' : null
               }
@@ -814,7 +841,9 @@ export function Board({
                   ? DRAG_LIFT_SHADOW
                   : isThreadTarget
                     ? `0 0 0 2px ${THREAD_STROKE}, 0 0 14px rgba(156,90,46,.45)`
-                    : undefined,
+                    : isSelected
+                      ? '0 0 0 2px rgba(60,30,10,.55), 0 0 0 4px rgba(60,30,10,.18)'
+                      : undefined,
                 touchAction: onCardDrop ? 'none' : undefined,
               }}
             >
