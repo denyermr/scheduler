@@ -69,7 +69,15 @@ export class RemoteRepository implements BoardRepository {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '');
     this.pollDriver = opts.pollDriver ?? intervalPollDriver;
     this.clock = opts.clock ?? ((): number => Date.now());
-    this.fetcher = opts.fetcher ?? fetch;
+    // Browser `fetch` MUST be invoked with `window` as `this`. Storing the
+    // bare reference on `this.fetcher` and calling via `this.fetcher(...)`
+    // would lose the binding and throw "Illegal invocation". Wrap in a
+    // closure so the call site is always a free function call.
+    const providedFetcher = opts.fetcher;
+    this.fetcher =
+      providedFetcher ??
+      ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+        fetch(input, init));
   }
 
   /**

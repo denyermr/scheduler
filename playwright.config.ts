@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 4173;
+const BACKEND_PORT = 8787;
 const BASE_URL = `http://localhost:${String(PORT)}`;
 
 export default defineConfig({
@@ -19,12 +20,28 @@ export default defineConfig({
     { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
-  webServer: {
-    command: `npm run preview -- --port ${String(PORT)} --strictPort`,
-    url: BASE_URL,
-    reuseExistingServer: !process.env['CI'],
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      // Phase 7 backend — node:http + better-sqlite3. Uses an in-memory DB
+      // so the e2e suite is hermetic between runs.
+      command: `npm run server`,
+      env: {
+        PORT: String(BACKEND_PORT),
+        DB_PATH: ':memory:',
+      },
+      port: BACKEND_PORT,
+      reuseExistingServer: !process.env['CI'],
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 30_000,
+    },
+    {
+      command: `npm run preview -- --port ${String(PORT)} --strictPort`,
+      url: BASE_URL,
+      reuseExistingServer: !process.env['CI'],
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 120_000,
+    },
+  ],
 });

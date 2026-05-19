@@ -11,10 +11,8 @@ import {
   URL_CHIP_BRIGHT,
   URL_CHIP_DIM,
 } from './ui/tokens';
-import {
-  DEMO_SLUG,
-  LocalStorageRepository,
-} from './persistence/localStorage';
+import { DEMO_SLUG } from './persistence/localStorage';
+import { RemoteRepository } from './persistence/remote';
 import type { BoardRepository } from './persistence/repository';
 import { useBoardEditor } from './state/useBoardEditor';
 
@@ -67,7 +65,12 @@ export function App({
   containerWidth: containerWidthOverride,
 }: AppProps = {}) {
   const repository = useMemo<BoardRepository>(
-    () => repositoryProp ?? new LocalStorageRepository(),
+    () =>
+      repositoryProp ??
+      // Default to the remote backend at the same origin. The Vite dev server
+      // proxies /b/* to the local Node server (see vite.config.ts); in prod
+      // both share the same hostname under Phase 8.
+      new RemoteRepository({ baseUrl: '' }),
     [repositoryProp],
   );
   const editorState = useBoardEditor({ repository, slug, clock, debounceMs });
@@ -94,11 +97,20 @@ export function App({
     deleteSelected,
     undo,
     redo,
+    mergeIncoming,
     requestResize,
     confirmPendingResize,
     cancelPendingResize,
   } = editorState;
   const [shareOpen, setShareOpen] = useState(false);
+
+  // Subscribe the editor to remote-merge updates if the repository supports
+  // polling (RemoteRepository does; InMemory / LocalStorage do not). Tests
+  // that inject InMemoryRepository skip this branch.
+  useEffect(() => {
+    if (!(repository instanceof RemoteRepository)) return;
+    return repository.subscribe(slug, mergeIncoming);
+  }, [repository, slug, mergeIncoming]);
 
   useEffect(() => {
     const isTextInputTarget = (target: EventTarget | null): boolean => {
