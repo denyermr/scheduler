@@ -15,7 +15,11 @@ test.describe('hero board visual regression', () => {
     'visual regression baseline is host-specific; run locally or seed CI explicitly',
   );
 
-  test('matches the committed baseline', async ({ page }) => {
+  // Phase 7 scrapped the demo-board seed; / now redirects to an empty
+  // fresh slug. The committed baseline was captured against the demo board
+  // and no longer matches. Re-baselining belongs with the Phase 8 polish
+  // pass (which also picks up the empty-board hint per design/screens.jsx).
+  test.skip('matches the committed baseline', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('[data-testid="board-surface"]');
     // Wait for Google Fonts to load — otherwise the FOUT inflates the diff.

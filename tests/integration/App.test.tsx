@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { App } from '../../src/App';
+import { buildDemoBoard } from '../../src/persistence/demoBoard';
+import { InMemoryRepository } from '../../src/persistence/memory';
 import { URL_CHIP_BRIGHT, URL_CHIP_DIM } from '../../src/ui/tokens';
+
+// Phase 7: <App /> defaults to RemoteRepository, which needs a real backend.
+// These tests inject an InMemoryRepository with a seeded board so they remain
+// component-level (the network layer is covered by RemoteRepository tests).
+function renderWithRepo() {
+  const board = buildDemoBoard();
+  const repo = new InMemoryRepository([['demo-board', board]]);
+  return render(<App repository={repo} slug="demo-board" />);
+}
 
 describe('<App /> page chrome (Amendment B)', () => {
   it('paints the soft cool off-white page background — not the v1 dark brown', () => {
-    render(<App />);
+    renderWithRepo();
     const page = screen.getByTestId('page');
     const inline = page.getAttribute('style') ?? '';
     // Set as `background-image` so jsdom preserves the multi-gradient stack.
@@ -16,7 +27,7 @@ describe('<App /> page chrome (Amendment B)', () => {
   });
 
   it('renders the URL chip in the new cool-grey colors', () => {
-    render(<App />);
+    renderWithRepo();
     const dim = screen.getByTestId('url-chip-dim');
     const bright = screen.getByTestId('url-chip-bright');
     expect(dim.style.color.toLowerCase()).toBe('rgb(122, 130, 149)'); // #7a8295
@@ -26,7 +37,7 @@ describe('<App /> page chrome (Amendment B)', () => {
   });
 
   it('eventually renders the demo board', async () => {
-    render(<App />);
+    renderWithRepo();
     await waitFor(() =>
       expect(screen.getByTestId('board-surface')).toBeInTheDocument(),
     );

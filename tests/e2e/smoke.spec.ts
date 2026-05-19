@@ -13,11 +13,11 @@ test('hero board shows all 7 day headers (Mon..Sun)', async ({ page }) => {
   }
 });
 
-test('hero board renders the 26 weeks and demo cards', async ({ page }) => {
+test('a fresh slug renders 26 empty weeks (Phase 7 — demo seed scrapped)', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('[data-testid="week-row"]')).toHaveCount(26);
-  // The hero demo set is 57 cards (47 weekday + 7 weekend + 3 stacked at
-  // (week 4, day 2) added in Phase 4 to showcase workflow 02).
-  await expect(page.locator('[data-testid="card-slot"]')).toHaveCount(57);
-  await expect(page.locator('[data-testid="thread-path"]')).toHaveCount(4);
+  // Phase 7: `/` redirects to a freshly-generated slug, which 404s on the
+  // backend and renders an empty board (invariant 1). No demo cards anymore.
+  await expect(page.locator('[data-testid="card-slot"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="thread-path"]')).toHaveCount(0);
 });

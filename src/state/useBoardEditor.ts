@@ -21,6 +21,7 @@ import type {
 } from '../domain/types';
 import { DAYS } from '../domain/types';
 import { MAX_WEEKS, MIN_WEEKS, clampWeeks } from '../domain/weeks';
+import { mergeBoardFromIncoming } from '../persistence/lww';
 import type { BoardRepository } from '../persistence/repository';
 import { History } from './history';
 
@@ -70,6 +71,26 @@ export type UseBoardEditorResult = {
   commitEdit: () => void;
   cancelEdit: () => void;
   deleteEditing: () => void;
+  /**
+   * Replace the board with the result of a remote-merge (10s poll → LWW).
+   *
+   * Unlike `commit`, this path:
+   *   - does NOT push the previous board onto the undo stack
+   *     (Cmd-Z must never roll back another user's edit), and
+   *   - does NOT call `scheduleSave` (the change is already on the server
+   *     as of `envelopeUpdatedAt`; re-writing it would overwrite fresher
+   *     local writes that haven't been flushed yet).
+   *
+   * Pinned by tests/integration/remoteMerge.test.ts.
+   */
+  commitFromRemote: (next: Board) => void;
+  /**
+   * Run LWW merge of an incoming board (from a poll) against local state,
+   * then commitFromRemote with the result. If a save is already queued,
+   * update its pending board so the eventual PATCH carries the merge
+   * (otherwise the pending save would overwrite remote adds).
+   */
+  mergeIncoming: (incomingBoard: Board, envelopeUpdatedAt: number) => void;
   /** Move a card to (week, day). Bumps updatedAt + assigns z. No-op if same cell. */
   moveCardTo: (cardId: CardId, week: Week, day: Day) => void;
   /** Rotate the z-order of cards in (week, day). No-op if 0 or 1 cards there. */
@@ -187,6 +208,39 @@ export function useBoardEditor(
     boardRef.current = next;
     setBoard(next);
   }, []);
+
+  const commitFromRemote = useCallback((next: Board) => {
+    // Replace the board WITHOUT pushing onto undo and WITHOUT scheduling a
+    // save. The merge result is already what the server holds; pushing
+    // undo would let Cmd-Z roll back a collaborator's edit (wrong UX), and
+    // saving would overwrite any locally-unflushed writes with the older
+    // server snapshot.
+    boardRef.current = next;
+    setBoard(next);
+  }, []);
+
+  const mergeIncoming = useCallback(
+    (incomingBoard: Board, envelopeUpdatedAt: number) => {
+      const current = boardRef.current;
+      if (current === null) return;
+      const merged = mergeBoardFromIncoming({
+        local: current,
+        incoming: incomingBoard,
+        envelopeUpdatedAt,
+      });
+      if (merged === current) return;
+      // commitFromRemote without restarting the save timer.
+      boardRef.current = merged;
+      setBoard(merged);
+      // If a save is queued (the user mutated locally before this poll
+      // arrived), make sure the pending PATCH carries the merge result —
+      // otherwise it would overwrite any remote-adds the merge folded in.
+      if (pendingBoard.current !== null) {
+        pendingBoard.current = merged;
+      }
+    },
+    [],
+  );
 
   const pushUndo = useCallback(
     (snapshot: Board) => {
@@ -545,6 +599,8 @@ export function useBoardEditor(
     commitEdit,
     cancelEdit,
     deleteEditing,
+    commitFromRemote,
+    mergeIncoming,
     moveCardTo,
     cycleCellStack,
     createThread,

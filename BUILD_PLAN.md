@@ -436,19 +436,23 @@ Constraints:
 
 **Goal.** Workflow 05 working with a real backend.
 
-**Decision point.** This phase opens with a one-page decision doc in `reviews/phase-7-backend-decision.md` evaluating Cloudflare Workers + Durable Objects, Supabase, Node + SQLite + minimal HTTP. **The sync mechanism is locked: 10-second poll on the client** — the backend decision is only about where state lives, not how the client gets updates.
+**Decision point — resolved 2026-05-18.** Backend is **Node + SQLite** via a single-file `node:http` + `better-sqlite3` server in `server/`. Wire format is the discriminated-union envelope from day one. `DEMO_SLUG` is scrapped; `/` redirects to a freshly generated slug. `commitFromRemote(next)` is added to `useBoardEditor` so poll-induced merges never enter the local undo stack. `PollDriver` injection mirrors the `Clock` pattern. Routing is plain `pathname` + `pushState`. Full rationale in `reviews/phase-7-backend-decision.md`. **The sync mechanism is locked: 10-second poll on the client** regardless of backend.
 
 **Scope**
-- `/` → home: redirects to a fresh slug.
-- `/b/<slug>` routing. Unknown slug → empty board created at that slug.
-- **Slugs: four random words + 4-digit suffix** (e.g. `oak-thread-helmet-tractor-7421`). Word list lives inline in `src/persistence/slug.ts` (~1500 adjectives + ~1500 nouns as plain TS arrays, no external dep). Combined entropy `1500⁴ × 10⁴ ≈ 5 × 10¹⁶` combinations — bots cannot enumerate. Collisions are tolerated by the backend (slug uniqueness is not enforced on the client; the unit test asserts shape, not global uniqueness).
-- `RemoteRepository` implements `BoardRepository`.
-- Debounced writes (250ms) per mutating action, batched per affected entity (card or thread).
-- `RemoteRepository` polls `GET /b/<slug>` every 10 seconds; the delta is merged into local state with LWW per card and per thread (invariant 4).
-- Remote-merge commits MUST NOT push onto the local undo stack (otherwise undo would re-apply / undo another user's edit). Add a third commit path in `useBoardEditor` alongside the existing `commit` + implicit `pushUndo`: `commitFromRemote(next)` that skips the snapshot push.
-- Share dialog shows the real URL and live `lastEdited` / `cardCount` / `threadCount` summary.
-- Optimistic UI: local mutations show immediately; server confirmation does not re-render.
-- Backend persistence schema stores the board payload as an opaque blob (or fields that include a `ciphertext` envelope) so Phase 7.5 can slot in client-side encryption without a schema migration. Concretely: don't model `cards` / `threads` as server-side tables you index into — store the whole board JSON per slug, server-opaque.
+- `/` → home: redirects to a fresh slug (generated client-side, written to URL via `history.replaceState`).
+- `/b/<slug>` routing via plain `pathname` parsing in `src/state/useRoute.ts` (no React Router). Unknown slug → backend `GET` 404 → `RemoteRepository` emits an empty `Board` at the current week count; the first write creates the row server-side.
+- **Slugs: four random words + 4-digit suffix** in the `adj-noun-adj-noun-NNNN` pattern (e.g. `oak-thread-helmet-tractor-7421`). Word lists live inline in `src/persistence/slugWords.ts` (~540 adjectives + ~550 nouns shipped as plain TS arrays, no external dep; spec floor is ≥ 500 of each). Combined entropy ≈ 9 × 10¹⁴ combinations — bots cannot enumerate. Collisions are tolerated by the backend (slug uniqueness is not enforced on the client; the unit test asserts shape across 500 samples, not global uniqueness). Router validation accepts any `[a-z0-9-]+` slug for forward-compat; only the *generator* enforces the four-word shape.
+- `RemoteRepository` implements `BoardRepository`. Uses `fetch` (no client-side lib), holds an injected `PollDriver` (`setInterval(cb, 10_000)` in production; manual fire in tests).
+- Debounced writes (250ms) per mutating action; the whole envelope is `PATCH`-ed (the server stores it opaquely — no per-entity payload).
+- `RemoteRepository` polls `GET /b/<slug>` every 10 seconds; the delta is merged into local state with LWW per card and per thread (invariant 4). Cards use the per-field `updatedAt` rule; threads use set-diff by id (immutable, no per-thread timestamp added — see decision doc §7).
+- Remote-merge commits MUST NOT push onto the local undo stack. The new path `commitFromRemote(next)` skips both `pushUndo` and `scheduleSave` (the change is already on the server).
+- Share dialog shows the real URL and live `Last edited Nm ago · N cards · M threads` summary from the server's `updatedAt`.
+- Optimistic UI: local mutations show immediately; server confirmation does not re-render. A poll arriving while the user is typing in the popover MUST NOT steal focus — pinned by a test that asserts `document.activeElement` is unchanged across a poll cycle.
+- Offline window: writes that fail are retained in memory and retried on the next poll tick. No data loss within a 30s offline window.
+- **Backend persistence schema**: one table `boards(slug TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at INTEGER NOT NULL)`. `payload` is the JSON envelope; the server never parses card / thread structure. Three endpoints, no per-entity routes. Phase 7.5 adds the locked-envelope arm without a schema migration.
+- **Wire envelope (option (b))**: `GET /b/:slug` always returns `{ locked: false, board, updatedAt } | { locked: true, ciphertext, iv, kdfSalt, kdfIters, updatedAt }`. Phase 7 ships only the unlocked arm; Phase 7.5 adds the locked arm.
+- **Dev / test harness**: `npm run server` boots the HTTP server on `localhost:8787` against `data/dev.sqlite` (gitignored). Vite dev server proxies `/b/*` to it. Tests stand up an in-process `http.Server` on an ephemeral port against `:memory:` SQLite; same code as prod. E2E tests boot the server once via Playwright's `webServer` config.
+- **`DEMO_SLUG` scrapped**: the old `'oak-thread-942'` constant and its `buildDemoBoard()` fallback are removed. `/` now generates a fresh slug. The existing localStorage entry under `sb:board:oak-thread-942` becomes orphaned for any dev who runs both `main` and the phase-7 branch on the same machine — noted in `reviews/phase-7.md`.
 
 **Out of scope.** Conflict warnings, presence indicators, cursors, comments. WebSockets / SSE — not in v1.
 
