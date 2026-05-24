@@ -14,6 +14,9 @@ export default defineConfig([
     'coverage',
     'test-results',
     'design',
+    // Stale agent worktrees from parallel runs — not part of this checkout's
+    // codebase and cause multi-tsconfig-root parser errors when scanned.
+    '.claude',
   ]),
   {
     files: ['**/*.{ts,tsx}'],
