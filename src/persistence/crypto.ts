@@ -52,7 +52,28 @@ export async function deriveKey(
     },
     baseKey,
     { name: 'AES-GCM', length: 256 },
-    false,
+    // Extractable so we can export → sessionStorage on unlock and
+    // re-import on reload. For our threat model (personal-deploy SPA
+    // where any XSS = total compromise anyway) the marginal risk is
+    // tiny and the UX win (no re-prompt on tab reload) is real.
+    true,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+/** Export an AES-GCM key as base64 raw bytes (for sessionStorage caching). */
+export async function exportKeyRaw(key: CryptoKey): Promise<string> {
+  const buf = await crypto.subtle.exportKey('raw', key);
+  return bytesToBase64(new Uint8Array(buf));
+}
+
+/** Import a previously-exported raw AES-GCM key (from sessionStorage). */
+export async function importKeyRaw(rawB64: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    'raw',
+    base64ToBytes(rawB64),
+    { name: 'AES-GCM', length: 256 },
+    true,
     ['encrypt', 'decrypt'],
   );
 }
