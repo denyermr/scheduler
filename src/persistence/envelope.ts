@@ -23,10 +23,15 @@ export type Envelope =
       readonly updatedAt: number;
     };
 
-export function isUnlocked(
-  env: Envelope,
-): env is Envelope & { locked: false } {
+export type LockedEnvelope = Envelope & { locked: true };
+export type UnlockedEnvelope = Envelope & { locked: false };
+
+export function isUnlocked(env: Envelope): env is UnlockedEnvelope {
   return env.locked === false;
+}
+
+export function isLocked(env: Envelope): env is LockedEnvelope {
+  return env.locked === true;
 }
 
 export type Unlocked = { board: Board; updatedAt: number };
