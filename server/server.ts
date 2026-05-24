@@ -1,6 +1,6 @@
-import { createServer, type Server } from 'node:http';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { createServer, type Server, type ServerResponse } from 'node:http';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, extname, normalize, resolve, sep } from 'node:path';
 import Database from 'better-sqlite3';
 
 /**
@@ -29,6 +29,14 @@ export type StartOptions = {
   dbPath: string;
   /** Port to bind. 0 = ephemeral (the OS chooses). */
   port: number;
+  /**
+   * Directory of built SPA assets (Phase 8A). When set, the server also
+   * serves the SPA: static files for known assets, index.html as the fallback
+   * for client-side routes, and index.html for `GET /b/:slug` with
+   * `Accept: text/html`. When unset (the test default), behavior is
+   * unchanged — only the API exists.
+   */
+  staticDir?: string;
 };
 
 export type ServerHandle = {
@@ -59,10 +67,29 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   `);
   const delStmt = db.prepare('DELETE FROM boards WHERE slug = ?');
 
+  const staticRoot =
+    opts.staticDir !== undefined ? resolve(opts.staticDir) : null;
+
   const server = createServer((req, res) => {
     const url = req.url ?? '';
+    const pathname = url.split('?')[0] ?? '';
+
+    // /healthz — always available, regardless of staticDir. Cheap liveness
+    // probe for Fly machine checks.
+    if (req.method === 'GET' && pathname === '/healthz') {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('ok');
+      return;
+    }
+
     const match = SLUG_RE.exec(url);
     if (match === null) {
+      // Outside the API surface. In prod (staticDir set), this is either a
+      // static asset, a client-side route (→ index.html), or a 404.
+      if (staticRoot !== null && req.method === 'GET') {
+        serveStaticOrSpa(res, staticRoot, pathname);
+        return;
+      }
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not found');
       return;
@@ -75,6 +102,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
 
     switch (req.method) {
       case 'GET': {
+        // `/b/:slug` is also the SPA route. Browser navigation arrives with
+        // `Accept: text/html` — in prod mode, serve index.html and let the
+        // client router pick up the slug. The Vite dev proxy does the same
+        // thing.
+        if (staticRoot !== null && acceptsHtml(req.headers.accept)) {
+          serveIndexHtml(res, staticRoot);
+          return;
+        }
         const row = getStmt.get(slug) as
           | { payload: string; updated_at: number }
           | undefined;
@@ -184,4 +219,82 @@ function extractUpdatedAt(parsed: unknown): number | null {
   if (typeof obj.updatedAt !== 'number') return null;
   if (!Number.isFinite(obj.updatedAt)) return null;
   return obj.updatedAt;
+}
+
+function acceptsHtml(header: string | string[] | undefined): boolean {
+  const value = Array.isArray(header) ? header.join(',') : (header ?? '');
+  return value.includes('text/html');
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.map': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+};
+
+function serveStaticOrSpa(
+  res: ServerResponse,
+  staticRoot: string,
+  pathname: string,
+): void {
+  // Resolve the requested path against the static root. `normalize` collapses
+  // `..` segments; the explicit prefix check rejects anything that escapes.
+  const requested = pathname === '/' ? '/index.html' : pathname;
+  const safe = normalize(requested).replace(/^(\.\.[/\\])+/, '');
+  const fsPath = resolve(staticRoot, '.' + (safe.startsWith('/') ? safe : '/' + safe));
+  if (fsPath !== staticRoot && !fsPath.startsWith(staticRoot + sep)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.end('Forbidden');
+    return;
+  }
+
+  if (tryServeFile(res, fsPath)) return;
+
+  // No file at that path. If it looks like a client-side route (no extension),
+  // fall back to index.html so the SPA can pick it up. Anything with an
+  // extension is a genuine 404 — don't mask broken assets.
+  if (extname(pathname) === '') {
+    serveIndexHtml(res, staticRoot);
+    return;
+  }
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.end('Not found');
+}
+
+function serveIndexHtml(res: ServerResponse, staticRoot: string): void {
+  const indexPath = resolve(staticRoot, 'index.html');
+  if (!tryServeFile(res, indexPath)) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('index.html missing from staticDir');
+  }
+}
+
+function tryServeFile(res: ServerResponse, fsPath: string): boolean {
+  try {
+    const stat = statSync(fsPath);
+    if (!stat.isFile()) return false;
+    const contentType = CONTENT_TYPES[extname(fsPath).toLowerCase()] ?? 'application/octet-stream';
+    const body = readFileSync(fsPath);
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': stat.size,
+    });
+    res.end(body);
+    return true;
+  } catch {
+    return false;
+  }
 }

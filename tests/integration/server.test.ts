@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startServer, type ServerHandle } from '../../server/server';
 
@@ -134,5 +137,114 @@ describe('server — GET / PATCH / DELETE /b/:slug', () => {
       updatedAt: 1,
     });
     expect(res.status).toBe(204);
+  });
+
+  it('GET /healthz returns 200 ok (always available, no staticDir needed)', async () => {
+    const res = await fetch(`${baseUrl}/healthz`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+  });
+});
+
+// Phase 8A — production mode: the same server process serves the built SPA
+// alongside the /b/:slug API. Opt in by passing `staticDir`. When the option
+// is absent (test default above), behavior is unchanged.
+describe('server — production mode (staticDir)', () => {
+  let prodHandle: ServerHandle;
+  let prodBaseUrl: string;
+  let staticDir: string;
+
+  beforeEach(async () => {
+    staticDir = mkdtempSync(join(tmpdir(), 'sb-static-'));
+    writeFileSync(join(staticDir, 'index.html'), '<!doctype html><title>SB</title>');
+    mkdirSync(join(staticDir, 'assets'), { recursive: true });
+    writeFileSync(join(staticDir, 'assets', 'app.js'), 'export const app=1;');
+    writeFileSync(join(staticDir, 'assets', 'app.css'), 'body{}');
+    prodHandle = await startServer({ dbPath: ':memory:', port: 0, staticDir });
+    prodBaseUrl = `http://127.0.0.1:${String(prodHandle.port)}`;
+  });
+
+  afterEach(async () => {
+    await prodHandle.close();
+    rmSync(staticDir, { recursive: true, force: true });
+  });
+
+  it('GET / serves index.html with text/html', async () => {
+    const res = await fetch(`${prodBaseUrl}/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/text\/html/);
+    expect(await res.text()).toContain('<title>SB</title>');
+  });
+
+  it('GET an existing asset serves the file with the right content-type', async () => {
+    const js = await fetch(`${prodBaseUrl}/assets/app.js`);
+    expect(js.status).toBe(200);
+    expect(js.headers.get('content-type')).toMatch(/javascript/);
+    expect(await js.text()).toContain('export const app');
+
+    const css = await fetch(`${prodBaseUrl}/assets/app.css`);
+    expect(css.status).toBe(200);
+    expect(css.headers.get('content-type')).toMatch(/css/);
+  });
+
+  it('GET an unknown SPA route (no extension) falls back to index.html', async () => {
+    const res = await fetch(`${prodBaseUrl}/some/client/route`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/text\/html/);
+    expect(await res.text()).toContain('<title>SB</title>');
+  });
+
+  it('GET an unknown file with an extension returns 404 (do not mask broken assets)', async () => {
+    const res = await fetch(`${prodBaseUrl}/missing.js`);
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /b/:slug with Accept: text/html serves the SPA (browser navigation)', async () => {
+    const res = await fetch(`${prodBaseUrl}/b/whatever-slug`, {
+      headers: { Accept: 'text/html' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/text\/html/);
+  });
+
+  it('GET /b/:slug with Accept: application/json still returns the API 404', async () => {
+    const res = await fetch(`${prodBaseUrl}/b/never-existed`, {
+      headers: { Accept: 'application/json' },
+    });
+    expect(res.status).toBe(404);
+    expect(res.headers.get('content-type')).toMatch(/text\/plain/);
+  });
+
+  it('PATCH /b/:slug still writes; subsequent GET (no Accept) returns the envelope JSON', async () => {
+    const envelope = {
+      locked: false,
+      board: { startMonday: '2024-05-27', weeks: 4, cards: [], threads: [] },
+      updatedAt: 7,
+    };
+    const put = await fetch(`${prodBaseUrl}/b/prod-write`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(envelope),
+    });
+    expect(put.status).toBe(204);
+    const get = await fetch(`${prodBaseUrl}/b/prod-write`);
+    expect(get.status).toBe(200);
+    expect(get.headers.get('content-type')).toMatch(/application\/json/);
+    expect(await get.json()).toEqual(envelope);
+  });
+
+  it('Path traversal attempts cannot read outside staticDir', async () => {
+    // fetch() normalizes `..` in URLs client-side, so percent-encode `../` to
+    // get the literal escape sequence on the wire. The server must reject it
+    // (or at worst, harmlessly 404 / serve the SPA shell) — never the host
+    // file. `root:` is the canonical /etc/passwd sentinel.
+    const res = await fetch(`${prodBaseUrl}/%2e%2e/%2e%2e/%2e%2e/etc/passwd`);
+    const body = await res.text();
+    expect(body).not.toContain('root:');
+  });
+
+  it('GET /healthz returns 200 ok in prod mode too', async () => {
+    const res = await fetch(`${prodBaseUrl}/healthz`);
+    expect(res.status).toBe(200);
   });
 });
