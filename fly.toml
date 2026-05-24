@@ -1,0 +1,50 @@
+# Fly.io configuration for the Schedule Board.
+#
+# Single-machine deployment by design — the SQLite-on-disk model from
+# Phase 7 cannot horizontally scale. Sync between clients is the 10-second
+# poll, which makes a single backing store correct and simple. If we ever
+# outgrow this, that's a v2 problem (LiteFS or a real DB).
+#
+# `app` is replaced by `fly launch` if you let it pick a unique name.
+
+app = "schedule-board"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8787"
+  DB_PATH = "/data/prod.sqlite"
+  STATIC_DIR = "/app/dist"
+  NODE_ENV = "production"
+
+# Persistent volume for the SQLite file. Created out-of-band with:
+#   fly volumes create data --region lhr --size 1
+[mounts]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # Cost control: the machine stops after idle and cold-starts on the next
+  # request. ~1s cold start is acceptable for a personal tool; flip to
+  # min_machines_running = 1 if cold starts become noticeable.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
