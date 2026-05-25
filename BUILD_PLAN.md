@@ -484,59 +484,105 @@ Constraints:
 
 ---
 
-## Phase 7.5 — Lockable boards (optional passphrase encryption)
+## Phase 7.5 — Mandatory locked boards + site-creation gate (in progress 2026-05-24)
 
-**Goal.** An owner can opt-in to a per-board passphrase. While locked, board contents are encrypted client-side; the server stores only an opaque ciphertext envelope. The default model from Phase 7 ("anyone with the link can edit") is preserved for un-locked boards; locked boards just demand both the link and the passphrase.
+**Goal.** Every board is encrypted client-side; the server stores only ciphertext envelopes. A static site-wide `SITE_PASSWORD` (Fly secret) gates the creation of new boards. The creator picks a per-board passphrase at create time; recipients need the slug + the passphrase to decrypt and view. **No unlocked variant.** Brought forward from "optional opt-in" because uncontrolled board creation on the public deploy is unacceptable, and the per-board-passphrase model is the right protection regardless.
 
-**Important.** This phase only starts once Phase 7 has been dogfooded for at least a week. The motivation for the lock is real-world feedback (e.g. wanting to put company info on a board); if dogfooding reveals it isn't needed, this phase is deferred indefinitely. The Phase 7 scope already prepares the backend to slot this in without a schema migration.
+**Why this changed.** The original Phase 7.5 plan made encryption optional. After the Phase 8A deploy went live, the bot/abuse surface was reconsidered: a single owner with a personal deployment does not need the "casual boards stay frictionless" middle ground — every board should be locked, and creation should require something only the owner knows. The site password is the simplest viable anti-bot for a one-user deployment.
 
 **Scope**
-- New toolbar control: `Lock` (text only — emoji ban). On click for an unlocked board: a modal asks for a passphrase + confirmation + a "There is no recovery. If you lose this, the board is lost." acknowledgement. Min 8 chars. On confirm: encrypts the current board and the next persistence write goes out as ciphertext.
-- For a locked board, `Lock` becomes `Locked · Unlock` — clicking prompts for the current passphrase to confirm and exits the locked state. A separate `Change passphrase` action re-encrypts under a new key.
-- Visiting `/b/<slug>` for a locked board renders an inline "This board is locked. Enter passphrase to view." panel with a single password input. Wrong → re-prompt with an error count, no lockout. Right → decrypt in memory and render normally.
-- Crypto: `PBKDF2-SHA-256` with `kdfIters ≥ 250_000`, salt is 16 random bytes generated on the first lock and persisted alongside the ciphertext. AES-GCM-256 with a fresh random IV per write. WebCrypto only — no external lib.
-- Persistence schema (locked variant): `{ locked: true, ciphertext: string (base64), iv: string (base64), kdfSalt: string (base64), kdfIters: number, updatedAt: number }`. The board-level `updatedAt` survives in plaintext so the Share dialog's "Last edited" line can still update; nothing else does.
-- Local cache (localStorage for the demo fallback path) mirrors the server shape — never persists plaintext to disk.
-- Share dialog: when locked, the Copy button copies just the URL; a separate "Copy with passphrase hint" line appears showing `<URL>\n\nPassphrase: [shown to owner only — they're expected to paste it out-of-band]`. The visitor-side experience requires the passphrase via the unlock panel, regardless of how it was shared.
-- Polling: a poll cycle for a locked board returns the ciphertext envelope. The client decrypts with the in-memory key; if decryption fails (e.g. the owner changed the passphrase from another tab), prompts for re-entry rather than crashing.
-- Concurrent locks: if two owners race to lock the same board, last-write-wins on the envelope. Both must re-enter on their next decrypt. This is acceptable behaviour for v1.
 
-**Out of scope.**
+*Server*
+- New `SITE_PASSWORD` env var, set as a Fly secret (`fly secrets set SITE_PASSWORD=...`).
+- `PATCH /b/:slug`: if the slug does not exist in the `boards` table AND the request lacks a valid `X-Site-Password` header → 401. Existing-slug PATCH does NOT require the site password (slug entropy is the protection).
+- `GET /b/:slug`: unchanged. `DELETE /b/:slug`: unchanged (currently nothing in the UI exposes delete — out of scope to change here).
+- Existing test boards on the live volume are wiped as part of deploy. Once 7.5 ships, every row in `boards` is a locked envelope.
+
+*Client crypto* (`src/persistence/crypto.ts`)
+- `PBKDF2-SHA-256` with `kdfIters = 200_000` (OWASP 2026 floor for PBKDF2-SHA-256). Salt is 16 random bytes per board, generated on create.
+- `AES-GCM-256` with a fresh 12-byte random IV per write.
+- WebCrypto only — no external library. No new runtime dependency.
+- `deriveKey(passphrase, salt, iters) → CryptoKey`, `encryptBoard(board, key) → { ciphertext, iv }`, `decryptEnvelope({ ciphertext, iv }, key) → Board | null` (null on auth-tag failure = wrong key).
+
+*Client wire format*
+- Server payloads are always `{ locked: true, ciphertext, iv, kdfSalt, kdfIters, updatedAt }`. The unlocked variant from Phase 7 still exists in the type union but is never produced or accepted by the v2 client.
+- `RemoteRepository.save(board)` requires a session key (held by `useBoardEditor`); encrypts, then PATCHes the ciphertext envelope.
+- `RemoteRepository.load(slug)` returns the raw envelope; the editor decrypts before rendering.
+- Poll-merge (`mergeIncoming`): decrypt the polled envelope first, then run the existing LWW on plaintext, then re-encrypt for the next save. No plaintext leaves the browser.
+
+*Splash screen at `/` (cork-paper aesthetic)*
+- Small "paper-pinned-to-cork" card centered on the floating-board page background — matches Phase 2 Patch B surfaces.
+- Two password inputs: **Site password** (creates boards) + **Board password** (encrypts this board). Caveat title; Manrope inputs. No emoji.
+- "Create board" button.
+- On submit:
+  1. Generate a fresh slug (`slugWords`).
+  2. Generate fresh 16-byte salt, derive key.
+  3. Encrypt an empty `Board` (default 26 weeks, no cards, no threads) with a fresh IV.
+  4. PATCH `/b/<slug>` with `{ locked: true, ciphertext, iv, kdfSalt, kdfIters: 200_000, updatedAt: now }` and header `X-Site-Password: <input>`.
+  5. On 201/204: stash the key in `sessionStorage` under `sb:key:<slug>`, navigate to `/b/<slug>`.
+  6. On 401: inline error "Site password incorrect" (no detail on which input).
+
+*Unlock screen at `/b/:slug` (cork-paper aesthetic)*
+- Same surface treatment as the splash.
+- `useBoardEditor` first fetches the envelope. If `sessionStorage` has a key for this slug, attempt silent decrypt; success → mount the board; failure → fall through to prompt.
+- Prompt: one password input + "Unlock". On submit: derive key with the envelope's `kdfSalt` + `kdfIters`, attempt `decryptEnvelope`. Success → cache key in `sessionStorage`, render board. Failure → inline error, retry.
+- 404 envelope (unknown slug) — show "This board doesn't exist or has been deleted." with a link back to `/`. (Distinct from the splash so the URL stays addressable.)
+
+**Out of scope (v1 of 7.5)**
 - Per-card encryption.
 - Per-user passphrases on the same board (would break "in the room" semantics).
-- Passphrase recovery / reset.
-- Audit log of access attempts.
-- Brute-force rate limiting at the server (PBKDF2 cost is the rate limit).
-- Lockable boards interacting with the 10s remote-merge in any way other than "decrypt → merge → re-encrypt → write." If the merge resolution itself becomes too expensive under the encryption layer, the answer is "Phase 7.5 took a perf hit" not "change the merge model".
+- Passphrase recovery / reset / hint storage.
+- "Change passphrase" UI (would need a re-encrypt + re-share flow; defer until needed).
+- Audit log of failed-unlock attempts.
+- Brute-force rate limiting (PBKDF2 cost is the rate limit; the site password gate limits create-rate).
+- Multiple site passwords / per-invitee tokens (v2, once multi-user matters).
 
-**TDD plan**
-1. Unit (`src/crypto/passphrase.ts`): PBKDF2 derivation produces a stable 256-bit key for `(passphrase, salt)`; different salts produce different keys; iters parameter is honored.
-2. Unit: `encryptBoard(board, key)` → `{ ciphertext, iv }`; `decryptBoard(envelope, key)` round-trips. Tampered ciphertext fails AES-GCM verification (test the auth-tag path).
-3. Unit: `decryptBoard` with the wrong key throws (not silent corruption).
-4. Integration: clicking Lock → modal → confirm → next save goes out with `locked: true` and no plaintext card text in the network payload.
-5. Integration: visiting a locked board renders the unlock panel and NOT the board surface.
-6. Integration: wrong passphrase increments an error count without revealing whether the board exists.
-7. Integration: right passphrase decrypts and renders the same board the owner saw.
-8. Integration: Unlock from toolbar prompts for current passphrase; on success, the next save is plaintext.
-9. Integration: a poll cycle that returns ciphertext is decrypted client-side; LWW merge runs on plaintext (assert merge outcomes are identical to the unencrypted equivalent).
-10. Integration: typing a swatch / text change while the board is locked encrypts before `scheduleSave` fires (no plaintext leaks via the debounce window).
-11. E2E: workflow — open fresh slug → add 3 cards → Lock with passphrase → reload → unlock panel → wrong passphrase rejected → right passphrase → cards visible.
-12. E2E: workflow — owner locks; visitor opens same URL in another context, must enter passphrase; once entered, cross-tab sync still works under encryption.
-13. Smoke: a packet capture of the network layer for a locked board contains no card text strings (`expect(JSON.stringify(payload)).not.toContain('whatever the card said')`).
+**TDD plan (ordered red → green)**
+
+*Crypto unit*
+1. `deriveKey('abc', salt, 200_000)` produces a `CryptoKey` usable for AES-GCM. Different salts → different keys (verified via roundtrip differing).
+2. `encryptBoard(board, key)` then `decryptEnvelope({ciphertext, iv}, key)` returns a deep-equal board. Property test (fast-check) over random small boards.
+3. `decryptEnvelope` with the wrong key returns `null` (no throw); the auth-tag failure path is explicit.
+4. Tampered ciphertext (single bit flipped) returns `null` from `decryptEnvelope`.
+
+*Server integration*
+5. `PATCH /b/<new-slug>` without `X-Site-Password` → 401, no row inserted.
+6. `PATCH /b/<new-slug>` with wrong `X-Site-Password` → 401, no row inserted.
+7. `PATCH /b/<new-slug>` with correct `X-Site-Password` → 204, row inserted.
+8. `PATCH /b/<existing-slug>` without `X-Site-Password` → 204 (existing-slug edits are open).
+9. Server reads `SITE_PASSWORD` from env at startup; missing env → server still starts but rejects all create attempts (defensive). Optionally: warn to stderr.
+
+*Client integration*
+10. Visiting `/` renders the splash with two password inputs. Submitting both posts a locked envelope to the new slug.
+11. Submitting the splash with wrong site password shows the inline error and doesn't navigate.
+12. Successful splash submit → navigates to `/b/<slug>` and renders the (empty) board without re-prompting (key cached in sessionStorage).
+13. Visiting `/b/<slug>` in a fresh tab (no sessionStorage) shows the unlock prompt, not the board.
+14. Wrong board password on unlock shows inline error and keeps the prompt mounted.
+15. Right board password decrypts and renders the board; key cached.
+16. A typing → save cycle in a locked board: the network payload contains `{ locked: true, ciphertext, ... }` and NO plaintext card text.
+17. Poll-merge: incoming locked envelope decrypts → LWW runs → next save re-encrypts. Merge outcomes identical to the Phase 7 plaintext equivalent.
+18. Reload in the same tab does NOT re-prompt (sessionStorage hit).
+19. New tab to the same `/b/<slug>` URL DOES re-prompt (sessionStorage is per-tab).
+
+*E2E*
+20. Full create flow: visit `/`, enter site + board passwords, click Create, lands on `/b/<slug>`, board is editable.
+21. Share flow: open the same `/b/<slug>` URL in a second browser context with no shared state — unlock prompt appears, board password decrypts, content matches.
+22. Wrong password rejection: open in a second context, enter wrong board password, see error, enter right password, succeed.
 
 **Test inventory**
 | Level | Count | What |
 |---|---|---|
-| Unit | ~6 | KDF, encrypt/decrypt, tamper detection |
-| Integration | ~9 | Lock/unlock UX, server payload shape, poll-under-lock, LWW under lock |
-| E2E | 2 | Full lock cycle + cross-context unlock |
+| Unit | ~4 | crypto roundtrip + wrong-key + tamper |
+| Integration | ~15 | site gate, splash, unlock, poll under lock, sessionStorage cache |
+| E2E | 3 | create flow, two-context unlock, wrong-password rejection |
 
 **Quality gates**
-- Server response for a locked board contains no plaintext fields beyond `{ locked, ciphertext, iv, kdfSalt, kdfIters, updatedAt }`. Smoke-tested at the network layer.
-- Key derivation uses `kdfIters ≥ 250_000`; pinned by a unit test that asserts the persisted envelope's `kdfIters` value.
-- A locked board's debounced save MUST encrypt before the timer fires; a test asserts no plaintext text/colors appear in `repository.save` arguments while locked.
-- The unlock panel does not render anything that reveals the board's structure (no card count, no thread count, no slug-derived info) — the entire payload is opaque until decrypted.
-- `npm run build` bundle stays under 250kb gzipped (Phase 8 quality gate). PBKDF2 + AES-GCM are in WebCrypto — no library footprint.
+- All server responses for any slug contain only the locked-envelope fields (`locked: true, ciphertext, iv, kdfSalt, kdfIters, updatedAt`) — pinned by an integration assertion against a saved board.
+- `kdfIters` in every persisted envelope is ≥ 200,000 — pinned by a unit test.
+- A save cycle's network payload never contains card text — explicit `expect(JSON.stringify(body)).not.toContain(...)` on a known card text.
+- `npm run build` bundle stays under 250 kB gzipped. WebCrypto is in the browser — no library footprint.
+- Site password is never logged or echoed in error messages — pinned by a test that the 401 response body does not include the submitted password.
+- Production deploy includes `fly secrets set SITE_PASSWORD=...` and a one-shot wipe of the existing boards table (since the live volume has Phase 8A test data with unlocked envelopes).
 
 ---
 

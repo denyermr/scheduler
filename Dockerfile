@@ -35,7 +35,12 @@ ENV NODE_ENV=production \
     STATIC_DIR=/app/dist
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# Strip the `prepare` hook (which runs husky, a devDep) before installing
+# production deps — otherwise `npm ci --omit=dev` exits 127. better-sqlite3's
+# own install script still runs, so its prebuilt binary still lands.
+RUN npm pkg delete scripts.prepare && \
+    npm ci --omit=dev && \
+    npm cache clean --force
 
 COPY server ./server
 COPY --from=build /app/dist ./dist

@@ -37,6 +37,14 @@ export type StartOptions = {
    * unchanged — only the API exists.
    */
   staticDir?: string;
+  /**
+   * Site-wide password gating *creation* of new boards (Phase 7.5). When set,
+   * PATCH on a slug that does not yet exist requires the `X-Site-Password`
+   * header to match this value. Existing-slug PATCH is always allowed (slug
+   * entropy is the protection for edits). When unset, the gate is off (used
+   * by tests + dev where bot exposure is zero).
+   */
+  sitePassword?: string;
 };
 
 export type ServerHandle = {
@@ -123,6 +131,22 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         return;
       }
       case 'PATCH': {
+        // Phase 7.5 site-creation gate: when sitePassword is configured AND
+        // the slug doesn't exist yet, require X-Site-Password. Existing-slug
+        // PATCH stays open. Constant-time-ish header comparison is overkill
+        // for a personal-deployment anti-bot — a simple === is fine here.
+        if (opts.sitePassword !== undefined) {
+          const existing = getStmt.get(slug);
+          if (existing === undefined) {
+            const submitted = req.headers['x-site-password'];
+            const value = Array.isArray(submitted) ? submitted[0] : submitted;
+            if (value !== opts.sitePassword) {
+              res.writeHead(401, { 'Content-Type': 'text/plain' });
+              res.end('Site password required to create a new board');
+              return;
+            }
+          }
+        }
         readBody(req, MAX_BODY_BYTES)
           .then((body) => {
             let parsed: unknown;

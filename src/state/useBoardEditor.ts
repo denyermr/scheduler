@@ -253,11 +253,18 @@ export function useBoardEditor(
   // Initial load.
   useEffect(() => {
     let cancelled = false;
-    void repository.load(slug).then((loaded) => {
-      if (cancelled) return;
-      boardRef.current = loaded;
-      setBoard(loaded);
-    });
+    repository.load(slug).then(
+      (loaded) => {
+        if (cancelled) return;
+        boardRef.current = loaded;
+        setBoard(loaded);
+      },
+      () => {
+        // Network failures / decrypt failures here mean we either lost the
+        // server (test teardown, transient) or the user's key drifted. The
+        // 10s poll will recover on a transient; nothing to do but swallow.
+      },
+    );
     return (): void => {
       cancelled = true;
     };

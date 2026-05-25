@@ -248,3 +248,126 @@ describe('server — production mode (staticDir)', () => {
     expect(res.status).toBe(200);
   });
 });
+
+// Phase 7.5 — SITE_PASSWORD gate. PATCH for a slug that does not exist
+// requires the `X-Site-Password` header. Existing-slug PATCH stays open
+// (slug entropy is the protection for edits).
+describe('server — SITE_PASSWORD create gate (Phase 7.5)', () => {
+  let gatedHandle: ServerHandle;
+  let gatedUrl: string;
+  const SITE_PASSWORD = 'test-site-pw-2026';
+
+  beforeEach(async () => {
+    gatedHandle = await startServer({
+      dbPath: ':memory:',
+      port: 0,
+      sitePassword: SITE_PASSWORD,
+    });
+    gatedUrl = `http://127.0.0.1:${String(gatedHandle.port)}`;
+  });
+
+  afterEach(async () => {
+    await gatedHandle.close();
+  });
+
+  function lockedEnvelope(updatedAt: number) {
+    return {
+      locked: true,
+      ciphertext: 'AAAA',
+      iv: 'BBBB',
+      kdfSalt: 'CCCC',
+      kdfIters: 200_000,
+      updatedAt,
+    };
+  }
+
+  it('PATCH on a new slug WITHOUT X-Site-Password returns 401, no row inserted', async () => {
+    const slug = 'never-created-without-pw';
+    const res = await fetch(`${gatedUrl}/b/${slug}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lockedEnvelope(100)),
+    });
+    expect(res.status).toBe(401);
+    const get = await fetch(`${gatedUrl}/b/${slug}`);
+    expect(get.status).toBe(404);
+  });
+
+  it('PATCH on a new slug with WRONG X-Site-Password returns 401, no row inserted', async () => {
+    const slug = 'never-created-wrong-pw';
+    const res = await fetch(`${gatedUrl}/b/${slug}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Site-Password': 'wrong-pw',
+      },
+      body: JSON.stringify(lockedEnvelope(100)),
+    });
+    expect(res.status).toBe(401);
+    const get = await fetch(`${gatedUrl}/b/${slug}`);
+    expect(get.status).toBe(404);
+  });
+
+  it('PATCH on a new slug with correct X-Site-Password returns 204, row inserted', async () => {
+    const slug = 'created-with-pw';
+    const res = await fetch(`${gatedUrl}/b/${slug}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Site-Password': SITE_PASSWORD,
+      },
+      body: JSON.stringify(lockedEnvelope(100)),
+    });
+    expect(res.status).toBe(204);
+    const get = await fetch(`${gatedUrl}/b/${slug}`);
+    expect(get.status).toBe(200);
+  });
+
+  it('PATCH on an EXISTING slug without X-Site-Password is allowed (edits stay open)', async () => {
+    const slug = 'edit-without-pw';
+    // First, create with the site password
+    await fetch(`${gatedUrl}/b/${slug}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Site-Password': SITE_PASSWORD,
+      },
+      body: JSON.stringify(lockedEnvelope(100)),
+    });
+    // Then edit without it
+    const res = await fetch(`${gatedUrl}/b/${slug}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lockedEnvelope(200)),
+    });
+    expect(res.status).toBe(204);
+    const get = await fetch(`${gatedUrl}/b/${slug}`);
+    const body = (await get.json()) as { updatedAt: number };
+    expect(body.updatedAt).toBe(200);
+  });
+
+  it('401 response body does not echo the submitted password', async () => {
+    const res = await fetch(`${gatedUrl}/b/echo-test`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Site-Password': 'super-secret-that-must-not-leak',
+      },
+      body: JSON.stringify(lockedEnvelope(100)),
+    });
+    const body = await res.text();
+    expect(body).not.toContain('super-secret-that-must-not-leak');
+  });
+
+  it('When NO sitePassword is configured, the server still works (gate is off)', async () => {
+    const noGate = await startServer({ dbPath: ':memory:', port: 0 });
+    const url = `http://127.0.0.1:${String(noGate.port)}`;
+    const res = await fetch(`${url}/b/no-gate-create`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lockedEnvelope(100)),
+    });
+    expect(res.status).toBe(204);
+    await noGate.close();
+  });
+});
