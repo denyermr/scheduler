@@ -2,9 +2,6 @@ import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useRoute } from '../../src/state/useRoute';
 
-const SLUG_SHAPE = /^[a-z]+-[a-z]+-[a-z]+-[a-z]+-\d{4}$/;
-const PERMISSIVE_SHAPE = /^[a-z0-9-]+$/;
-
 function setPath(path: string): void {
   window.history.replaceState({}, '', path);
 }
@@ -17,49 +14,49 @@ afterEach(() => {
   cleanup();
 });
 
-describe('useRoute', () => {
-  it('parses the slug from /b/<slug>', () => {
+describe('useRoute (Phase 7.5)', () => {
+  it('parses /b/<slug> as board mode', () => {
     setPath('/b/oak-thread-helmet-tractor-7421');
     const { result } = renderHook(() => useRoute());
-    expect(result.current.slug).toBe('oak-thread-helmet-tractor-7421');
+    expect(result.current).toEqual({
+      mode: 'board',
+      slug: 'oak-thread-helmet-tractor-7421',
+    });
   });
 
-  it('parses legacy / forward-compat slugs (the permissive [a-z0-9-]+ shape)', () => {
+  it('parses legacy / permissive slugs ([a-z0-9-]+) as board mode', () => {
     setPath('/b/oak-thread-942');
     const { result } = renderHook(() => useRoute());
-    expect(result.current.slug).toBe('oak-thread-942');
-    expect(result.current.slug).toMatch(PERMISSIVE_SHAPE);
+    expect(result.current).toEqual({ mode: 'board', slug: 'oak-thread-942' });
   });
 
-  it('on /, generates a fresh slug and replaces the URL', () => {
+  it('on /, returns splash mode and does not change the URL', () => {
     setPath('/');
     const { result } = renderHook(() => useRoute());
-    expect(result.current.slug).toMatch(SLUG_SHAPE);
-    expect(window.location.pathname).toBe(`/b/${result.current.slug}`);
+    expect(result.current).toEqual({ mode: 'splash' });
+    expect(window.location.pathname).toBe('/');
   });
 
-  it('on an unknown path (e.g. /foo), generates a fresh slug and replaces', () => {
+  it('on an unknown path, normalizes to / and returns splash mode', () => {
     setPath('/foo');
     const { result } = renderHook(() => useRoute());
-    expect(result.current.slug).toMatch(SLUG_SHAPE);
-    expect(window.location.pathname).toBe(`/b/${result.current.slug}`);
+    expect(result.current).toEqual({ mode: 'splash' });
+    expect(window.location.pathname).toBe('/');
   });
 
-  it('the same hook instance keeps its slug across re-renders (no thrashing)', () => {
-    setPath('/b/stable-slug-name-here-0001');
-    const hook = renderHook(() => useRoute());
-    const first = hook.result.current.slug;
-    hook.rerender();
-    const second = hook.result.current.slug;
-    expect(first).toBe(second);
-  });
-
-  it('rejects malformed /b/<slug> with uppercase or symbols, generates fresh', () => {
-    // Anything not matching [a-z0-9-]+ as the second segment is treated as
-    // unknown and falls through to generation.
+  it('on malformed /b/<slug> with uppercase or symbols, normalizes to / and returns splash', () => {
     setPath('/b/UPPER_CASE_BAD');
     const { result } = renderHook(() => useRoute());
-    expect(result.current.slug).toMatch(SLUG_SHAPE);
-    expect(window.location.pathname).toBe(`/b/${result.current.slug}`);
+    expect(result.current).toEqual({ mode: 'splash' });
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('the same hook instance keeps its route across re-renders (no thrashing)', () => {
+    setPath('/b/stable-slug-name-here-0001');
+    const hook = renderHook(() => useRoute());
+    const first = hook.result.current;
+    hook.rerender();
+    const second = hook.result.current;
+    expect(first).toBe(second);
   });
 });
