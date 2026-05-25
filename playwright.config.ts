@@ -24,10 +24,13 @@ export default defineConfig({
     {
       // Phase 7 backend — node:http + better-sqlite3. Uses an in-memory DB
       // so the e2e suite is hermetic between runs.
+      // SITE_PASSWORD enables the Phase 7.5 create gate; matches
+      // `E2E_SITE_PASSWORD` in tests/e2e/helpers.ts.
       command: `npm run server`,
       env: {
         PORT: String(BACKEND_PORT),
         DB_PATH: ':memory:',
+        SITE_PASSWORD: 'e2e-site-pw-2026',
       },
       port: BACKEND_PORT,
       reuseExistingServer: !process.env['CI'],

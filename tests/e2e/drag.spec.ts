@@ -1,16 +1,10 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { gotoFreshBoard } from './helpers';
 
 const DEBOUNCE_BUFFER_MS = 400;
 const PRESS_HOLD_BUFFER_MS = 200;
 
 const E2E_TEXT_DRAG = 'E2E spec — drag';
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => {
-    window.localStorage.clear();
-  });
-});
 
 async function centerOf(locator: Locator): Promise<{ x: number; y: number }> {
   const box = await locator.boundingBox();
@@ -35,8 +29,7 @@ async function pressHoldDrag(
 test('workflow 02 — drag a card to a new cell, reload, persists at the new cell', async ({
   page,
 }) => {
-  await page.goto('/');
-  await expect(page.locator('[data-testid="board-surface"]')).toBeVisible();
+  await gotoFreshBoard(page);
 
   // Seed our own card so we can identify it deterministically.
   await page.locator('[data-testid="cell-0-5"]').click();
@@ -99,8 +92,7 @@ test('workflow 02 — drag a card to a new cell, reload, persists at the new cel
 test.skip('a stacked cell shows multiple cards with deterministic offsets visible', async ({
   page,
 }) => {
-  await page.goto('/');
-  await expect(page.locator('[data-testid="board-surface"]')).toBeVisible();
+  await gotoFreshBoard(page);
 
   // The demo board seeds 3 cards at (4, 2) — exercises the §4 offset formula
   // for n = 3: offsets[0] = (+4, +3), [1] = (-7, -5.5), [2] = (+10, +8).

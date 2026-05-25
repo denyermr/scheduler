@@ -1,23 +1,24 @@
 import { test, expect } from '@playwright/test';
+import { gotoFreshBoard } from './helpers';
 
-test('home page renders the schedule board chrome', async ({ page }) => {
+test('home page (/) renders the splash screen, not a board', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('[data-testid="board-surface"]')).toBeVisible();
-  await expect(page.getByText('scheduleboard.app /')).toBeVisible();
+  await expect(page.getByLabel(/site password/i)).toBeVisible();
+  await expect(page.getByLabel(/board password/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /create board/i })).toBeVisible();
 });
 
-test('hero board shows all 7 day headers (Mon..Sun)', async ({ page }) => {
-  await page.goto('/');
+test('after splash submit, board chrome and 7 day headers render', async ({ page }) => {
+  await gotoFreshBoard(page);
+  await expect(page.locator('[data-testid="board-surface"]')).toBeVisible();
   for (const label of ['MON', 'TUES', 'WED', 'THURS', 'FRI', 'SAT', 'SUN']) {
     await expect(page.getByText(label, { exact: true })).toBeVisible();
   }
 });
 
-test('a fresh slug renders 26 empty weeks (Phase 7 — demo seed scrapped)', async ({ page }) => {
-  await page.goto('/');
+test('a fresh slug renders 26 empty weeks (no demo seed)', async ({ page }) => {
+  await gotoFreshBoard(page);
   await expect(page.locator('[data-testid="week-row"]')).toHaveCount(26);
-  // Phase 7: `/` redirects to a freshly-generated slug, which 404s on the
-  // backend and renders an empty board (invariant 1). No demo cards anymore.
   await expect(page.locator('[data-testid="card-slot"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="thread-path"]')).toHaveCount(0);
 });

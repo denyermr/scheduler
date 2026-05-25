@@ -1,17 +1,11 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { gotoFreshBoard } from './helpers';
 
 const DEBOUNCE_BUFFER_MS = 400;
 const FLASH_BUFFER_MS = 250;
 
 const E2E_SRC_TEXT = 'E2E thread src';
 const E2E_TGT_TEXT = 'E2E thread tgt';
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => {
-    window.localStorage.clear();
-  });
-});
 
 async function centerOf(locator: Locator): Promise<{ x: number; y: number }> {
   const box = await locator.boundingBox();
@@ -37,10 +31,9 @@ async function seedCardAtCell(
 test('workflow 03 — drag from card handle to another card creates a thread; reload persists; click deletes', async ({
   page,
 }) => {
-  await page.goto('/');
-  await expect(page.locator('[data-testid="board-surface"]')).toBeVisible();
+  await gotoFreshBoard(page);
 
-  // Demo board already has some threads; capture the baseline count.
+  // Phase 7 scrapped the demo seed; a fresh board has zero threads.
   const baseline = await page.locator('[data-testid="thread-path"]').count();
 
   // Seed two cards at empty cells well away from demo data. We pick different

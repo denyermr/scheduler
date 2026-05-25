@@ -1,19 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { gotoFreshBoard } from './helpers';
 
 const DEBOUNCE_BUFFER_MS = 400;
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => {
-    window.localStorage.clear();
-  });
-});
 
 test('workflow 06 — Weeks stepper shrinks the board; warning shown when cards would be cut', async ({
   page,
 }) => {
-  await page.goto('/');
-  await expect(page.locator('[data-testid="board-surface"]')).toBeVisible();
+  await gotoFreshBoard(page);
 
   // Seed a card deep in the board (week 20 of the default 26) so a shrink
   // to 4 weeks cuts it off.
@@ -59,8 +52,7 @@ test('workflow 06 — Weeks stepper shrinks the board; warning shown when cards 
 test('keyboard-only sequence — select a card, nudge with arrows, Backspace deletes, Cmd-Z restores, Cmd-Shift-Z re-deletes', async ({
   page,
 }) => {
-  await page.goto('/');
-  await expect(page.locator('[data-testid="board-surface"]')).toBeVisible();
+  await gotoFreshBoard(page);
 
   // Seed a unique card at an empty Saturday cell (matches cards.spec.ts).
   await page.locator('[data-testid="cell-1-5"]').click();
@@ -132,8 +124,7 @@ test('Share dialog — opens, shows the URL with the slug, Copy is wired to clip
     'clipboard-write permission is chromium-only',
   );
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.goto('/');
-  await expect(page.locator('[data-testid="board-surface"]')).toBeVisible();
+  await gotoFreshBoard(page);
 
   await page.locator('[data-testid="toolbar-share"]').click();
   await expect(page.locator('[data-testid="share-dialog"]')).toBeVisible();
